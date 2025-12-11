@@ -1,0 +1,8 @@
+{
+  "name": "海鮮小劉 - 海鮮禮盒專賣",
+  "description": "頂級新鮮海鮮禮盒線上訂購平台，提供小資、輕盈及團聚多樣選擇，結合AI料理預覽功能。",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
