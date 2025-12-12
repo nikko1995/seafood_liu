@@ -593,13 +593,14 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
 
   const renderStep3 = () => {
     const handleShareOrderId = async () => {
-         const shareText = `【海鮮小劉】訂購成功！\n訂單編號：${orderId}\n訂單查詢：${window.location.origin}`;
+         // Updated share text with emojis and specific instructions
+         const shareText = `【海鮮小劉】🎉 已收到您的訂單！\n\n訂單編號：${orderId}\n\n⚠️ 麻煩於 2 日內完成匯款，並回傳「帳號末五碼」至官方 LINE 以利對帳。\n🚚 訂單將於款項確認後的 3-5 個工作日出貨。\n\n🔍 訂單查詢：${window.location.origin}`;
 
          // Try Native Share first (Mobile experience)
          if (navigator.share) {
              try {
                  await navigator.share({
-                     title: '海鮮小劉訂單',
+                     title: '海鮮小劉訂單確認',
                      text: shareText,
                  });
              } catch (err) {
