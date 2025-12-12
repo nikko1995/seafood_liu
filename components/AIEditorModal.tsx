@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Product } from '../types';
 import { Icons } from './Icons';
 import { editProductImage } from '../services/geminiService';
@@ -13,6 +13,14 @@ const AIEditorModal: React.FC<AIEditorModalProps> = ({ product, onClose }) => {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // --- Scroll Lock Effect ---
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+        document.body.style.overflow = '';
+    };
+  }, []);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
