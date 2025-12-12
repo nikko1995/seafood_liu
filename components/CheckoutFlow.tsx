@@ -537,7 +537,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                     </button>
                  </>
              ) : (
-                 // Inactive: Structured Bank Info Card WITHOUT Warnings
+                 // Inactive: Structured Bank Info Card
                  <>
                     <div className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-5 rounded-xl space-y-4">
                          <div className="flex justify-between items-center">
@@ -574,12 +574,12 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                          </div>
                      </div>
 
-                     {/* Merged Warning Block Outside Card */}
-                     <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30 p-4 rounded-xl flex gap-3">
-                         <div className="text-2xl flex-shrink-0">👾</div>
+                     {/* Updated Warning Block to Orange Style to match Store Selection */}
+                     <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 p-4 rounded-xl flex gap-3 shadow-sm">
+                         <div className="text-orange-500 flex-shrink-0 mt-0.5"><Icons.Alert size={20} /></div>
                          <div>
                              <p className="text-sm font-bold text-orange-800 dark:text-orange-200 mb-1">匯款小叮嚀</p>
-                             <ul className="text-xs text-orange-700 dark:text-orange-300 space-y-1 list-disc pl-3">
+                             <ul className="text-xs text-orange-800 dark:text-orange-300 space-y-1 list-disc pl-3">
                                  <li>請於 <span className="font-bold underline">2日內</span> 完成匯款，逾期將取消訂單。</li>
                                  <li>轉帳後請保留明細，並告知客服<span className="font-bold">帳號末五碼</span>以利對帳。</li>
                              </ul>
@@ -605,8 +605,15 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
          </p>
 
          {!settings.enableOnlinePayment && (
-            <div className="mb-6 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-300 px-4 py-3 rounded-xl text-sm font-bold border border-orange-100 dark:border-orange-900/30 inline-block shadow-sm">
-                👾 貼心小怪獸提醒：請記得於 2 日內完成匯款以保留訂單
+            // Updated to Orange Style with Monster Emoji and specific text emphasis
+            <div className="mb-6 w-full bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 p-4 rounded-xl flex items-start gap-3 shadow-sm text-left">
+                <span className="text-2xl flex-shrink-0">👾</span>
+                <div>
+                    <p className="text-sm font-bold text-orange-800 dark:text-orange-200">貼心小提醒</p>
+                    <p className="text-xs text-orange-800 dark:text-orange-300 mt-1 leading-relaxed">
+                        請記得於 <span className="font-bold underline">2日內</span> 完成匯款並<span className="font-bold">回傳證明</span>，才能為您保留訂單喔！
+                    </p>
+                </div>
             </div>
          )}
          
