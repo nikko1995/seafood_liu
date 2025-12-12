@@ -591,7 +591,29 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
     </div>
   );
 
-  const renderStep3 = () => (
+  const renderStep3 = () => {
+    const handleShareOrderId = async () => {
+         const shareText = `【海鮮小劉】訂購成功！\n訂單編號：${orderId}\n訂單查詢：${window.location.origin}`;
+
+         // Try Native Share first (Mobile experience)
+         if (navigator.share) {
+             try {
+                 await navigator.share({
+                     title: '海鮮小劉訂單',
+                     text: shareText,
+                 });
+             } catch (err) {
+                 // User cancelled or error, fallback to LINE
+                 console.log(err);
+             }
+         } else {
+             // Fallback to direct LINE share for Desktop/Unsupported browsers
+             const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`;
+             window.open(lineUrl, '_blank');
+         }
+    };
+
+    return (
     <div className="flex flex-col items-center justify-center py-6 animate-fade-in text-center w-full">
          <div className="relative mb-6">
              <div className="absolute inset-0 bg-green-200 rounded-full animate-ping opacity-20"></div>
@@ -605,7 +627,6 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
          </p>
 
          {!settings.enableOnlinePayment && (
-            // Updated to Orange Style with Monster Emoji and specific text emphasis
             <div className="mb-6 w-full bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 p-4 rounded-xl flex items-start gap-3 shadow-sm text-left">
                 <span className="text-2xl flex-shrink-0">👾</span>
                 <div>
@@ -622,17 +643,26 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                 <p className="text-xs text-slate-500 dark:text-slate-400 text-left mb-1">訂單編號</p>
                 <p className="font-mono font-bold text-slate-800 dark:text-white tracking-wider">{orderId}</p>
             </div>
-            <button 
-                onClick={() => handleCopy(orderId)}
-                className="p-2 bg-white dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors shadow-sm"
-                title="複製單號"
-            >
-                <Icons.Copy size={18} />
-            </button>
+            <div className="flex gap-2">
+                 <button 
+                    onClick={() => handleCopy(orderId)}
+                    className="p-2 bg-white dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors shadow-sm border border-slate-200 dark:border-slate-600"
+                    title="複製單號"
+                >
+                    <Icons.Copy size={18} />
+                </button>
+                <button 
+                    onClick={handleShareOrderId}
+                    className="p-2 bg-white dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors shadow-sm border border-slate-200 dark:border-slate-600"
+                    title="分享單號 (LINE)"
+                >
+                    <Icons.Share size={18} />
+                </button>
+            </div>
          </div>
 
          <div className="flex flex-col gap-3 w-full">
-             {/* Main Action: Add Line */}
+             {/* 1. 加入 LINE 官方帳號 (Primary) */}
              <a 
                 href="https://line.me/R/ti/p/@110zazyo"
                 target="_blank"
@@ -645,16 +675,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                 加入海鮮小劉 LINE 官方帳號
              </a>
 
-             {/* Secondary: Check Order */}
-             <button 
-                onClick={handleCompleteFlow} // Navigates to Orders tab via App callback
-                className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold py-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-             >
-                <Icons.Order size={18} />
-                前往訂單查詢
-             </button>
-
-             {/* Tertiary: Share (UPDATED) */}
+             {/* 2. Share Website (Secondary) */}
              <button 
                 onClick={handleShareWebsite}
                 className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold py-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
@@ -662,9 +683,19 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                 <Icons.Share size={18} />
                 分享給愛吃海鮮的朋友
              </button>
+
+             {/* 3. Check Order (Secondary) */}
+             <button 
+                onClick={handleCompleteFlow} 
+                className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold py-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+             >
+                <Icons.Order size={18} />
+                前往訂單查詢
+             </button>
          </div>
     </div>
-  );
+    );
+  };
 
   // Determine progress bar width
   const progressWidth = step === 1 ? '33%' : step === 2 ? '66%' : '100%';
