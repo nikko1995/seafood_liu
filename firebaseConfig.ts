@@ -1,36 +1,38 @@
-
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getAuth } from "firebase/auth";
 
-// TODO: 請將此處替換為您從 Firebase Console 取得的配置
-// 1. 前往 https://console.firebase.google.com/
-// 2. 建立專案 -> 新增 Web App -> 複製 firebaseConfig
+// -----------------------------------------------------------
+// 您的專案資訊 (seafood-liu)
+// -----------------------------------------------------------
+
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY_HERE",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyC8afD79Pa1l1UCZ1ydzjdWn8KuoagerNI",
+  authDomain: "seafood-liu.firebaseapp.com",
+  projectId: "seafood-liu",
+  storageBucket: "seafood-liu.firebasestorage.app",
+  messagingSenderId: "49835016474",
+  appId: "1:49835016474:web:486c64f372af579d756ca3",
+  measurementId: "G-Z57HLMT855"
 };
 
+// -----------------------------------------------------------
+
 // Initialize Firebase
-// 為了避免在沒有設定 Key 時報錯導致白畫面，我們加一個簡單的檢查
+let app;
 let db: any;
 let storage: any;
+let auth: any;
 
 try {
-    if (firebaseConfig.apiKey !== "YOUR_API_KEY_HERE") {
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        storage = getStorage(app);
-        console.log("Firebase initialized successfully");
-    } else {
-        console.warn("Firebase config is missing. App is running in Mock Data mode.");
-    }
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    storage = getStorage(app);
+    auth = getAuth(app);
+    console.log("🔥 Firebase 連線成功 (seafood-liu)！");
 } catch (error) {
-    console.error("Firebase initialization failed:", error);
+    console.error("Firebase 初始化失敗:", error);
 }
 
-export { db, storage };
+export { db, storage, auth };
