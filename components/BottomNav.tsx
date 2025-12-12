@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Tab } from '../types';
 import { Icons } from './Icons';
@@ -9,7 +10,7 @@ interface BottomNavProps {
 
 const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onTabChange }) => {
   const navItems = [
-    { id: Tab.PRODUCTS, label: '海鮮禮盒', icon: Icons.Product },
+    { id: Tab.PRODUCTS, label: '海鮮商品', icon: Icons.Product }, // Updated label
     { id: Tab.BRAND, label: '品牌介紹', icon: Icons.Brand },
     { id: Tab.ORDERS, label: '訂單查詢', icon: Icons.Order },
   ];
