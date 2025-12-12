@@ -1,14 +1,15 @@
 
 import React, { useEffect, useState } from 'react';
 import { Icons } from './Icons';
-import { Tab } from '../types';
+import { Tab, SiteSettings } from '../types';
 
 interface HeaderProps {
     activeTab: Tab;
     onTabChange: (tab: Tab) => void;
+    settings?: SiteSettings; // Optional settings prop to get Logo
 }
 
-const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
+const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, settings }) => {
   const [isDark, setIsDark] = useState(() => {
     // Check system preference initially
     if (typeof window !== 'undefined') {
@@ -30,13 +31,14 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   };
 
   const navItems = [
-    { id: Tab.PRODUCTS, label: '海鮮禮盒' },
+    { id: Tab.PRODUCTS, label: '海鮮商品' },
     { id: Tab.BRAND, label: '品牌介紹' },
     { id: Tab.ORDERS, label: '訂單查詢' },
   ];
 
   return (
-    <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 transition-colors duration-300">
+    // Changed: 'sticky top-0' removed for mobile, added 'md:sticky md:top-0' for desktop only.
+    <header className="relative md:sticky md:top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 transition-colors duration-300">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         
         {/* Left Side: Logo */}
@@ -44,9 +46,13 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
             className="flex items-center gap-3 cursor-pointer select-none" 
             onClick={() => onTabChange(Tab.PRODUCTS)}
         >
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg shadow-blue-200/50 flex items-center justify-center text-white transform hover:scale-105 transition-transform duration-200">
-                <Icons.Fish size={24} strokeWidth={2.5} />
-            </div>
+            {settings?.websiteLogo ? (
+                 <img src={settings.websiteLogo} alt="Logo" className="w-10 h-10 object-contain rounded-xl" />
+            ) : (
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg shadow-blue-200/50 flex items-center justify-center text-white transform hover:scale-105 transition-transform duration-200">
+                    <Icons.Fish size={24} strokeWidth={2.5} />
+                </div>
+            )}
             <div className="flex flex-col">
                 <h1 className="font-bold text-lg text-slate-900 dark:text-white leading-tight">海鮮小劉</h1>
                 <span className="text-[10px] font-bold text-blue-500 tracking-wider">SEAFOOD LIU</span>
