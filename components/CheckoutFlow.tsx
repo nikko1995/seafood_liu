@@ -654,13 +654,13 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                 前往訂單查詢
              </button>
 
-             {/* Tertiary: Share */}
+             {/* Tertiary: Share (UPDATED) */}
              <button 
                 onClick={handleShareWebsite}
-                className="w-full text-slate-400 dark:text-slate-500 font-bold py-2 rounded-xl hover:text-slate-600 dark:hover:text-slate-300 transition-colors flex items-center justify-center gap-2 text-sm"
+                className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold py-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
              >
-                <Icons.Share size={16} />
-                分享網站給朋友
+                <Icons.Share size={18} />
+                分享給愛吃海鮮的朋友
              </button>
          </div>
     </div>
