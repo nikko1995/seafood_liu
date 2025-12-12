@@ -8,7 +8,6 @@ import {
   deleteDoc, 
   updateDoc, 
   query, 
-  orderBy,
   getDoc
 } from "firebase/firestore";
 import { Product, Order, SiteSettings } from "../types";
@@ -27,7 +26,10 @@ export const fetchProducts = async (): Promise<Product[]> => {
   try {
     const q = query(collection(db, PRODUCTS_COL));
     const snapshot = await getDocs(q);
-    if (snapshot.empty) return [];
+    
+    // 如果資料庫是空的，自動回傳範例資料，讓網站看起來有東西
+    if (snapshot.empty) return PRODUCTS; 
+    
     return snapshot.docs.map(doc => doc.data() as Product);
   } catch (error) {
     console.error("Error fetching products:", error);
@@ -63,13 +65,11 @@ export const removeProduct = async (productId: string): Promise<void> => {
 export const fetchOrders = async (): Promise<Order[]> => {
   if (!db) return MOCK_ORDERS;
   try {
-    // Try to sort by date desc, requires index in Firebase Console (link will appear in console error if missing)
-    // For now, let's fetch all and sort in client to avoid index creation friction
     const snapshot = await getDocs(collection(db, ORDERS_COL));
     if (snapshot.empty) return [];
     
     const orders = snapshot.docs.map(doc => doc.data() as Order);
-    // Sort locally by date desc
+    // 在前端進行簡單的排序
     return orders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   } catch (error) {
     console.error("Error fetching orders:", error);
