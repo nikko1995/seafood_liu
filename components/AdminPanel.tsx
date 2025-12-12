@@ -38,6 +38,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     setOrderPage(1);
   }, [orderSearchTerm, orderDateRange]);
 
+  // Lock body scroll when edit modal is open
+  useEffect(() => {
+      if (isEditModalOpen) {
+          document.body.style.overflow = 'hidden';
+      } else {
+          document.body.style.overflow = '';
+      }
+      return () => { document.body.style.overflow = ''; };
+  }, [isEditModalOpen]);
+
   const handleEditProduct = (product: Product) => {
     setEditingProduct({ ...product });
     setIsEditModalOpen(true);
