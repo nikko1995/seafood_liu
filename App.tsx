@@ -21,19 +21,34 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   
+  // Category State
+  const [selectedCategory, setSelectedCategory] = useState<'all' | 'store' | 'delivery'>('all');
+  
   // Auth State (目前的登入者) - 使用 any 避免型別錯誤
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   
   // Default Settings
   const [settings, setSettings] = useState<SiteSettings>({
     enableStoreIntegration: false,
-    storeFallbackMessage: '請使用下方連結查詢門市，並將「門市名稱」與「店號」填寫於下方欄位。',
+    storeFallbackMessage: '請使用下方連結查詢7-11門市，並將「門市名稱」與「店號」填寫於下方欄位。',
     storeLookupLink: 'https://emap.presco.com.tw/c2cemap.ashx',
     enableOnlinePayment: false,
     bankName: '822 中國信託',
     bankAccount: '123-456-78900',
     bankAccountName: '海鮮小劉',
-    lastUpdated: new Date().toLocaleString('zh-TW', { hour12: false })
+    lastUpdated: new Date().toLocaleString('zh-TW', { hour12: false }),
+    // New Defaults
+    brandBannerImage: 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?q=80&w=1200&auto=format&fit=crop',
+    brandBannerTitle: '來自大溪漁港的堅持',
+    brandFeatures: [
+        { title: '漁港攤販起家，傳承三代', description: '我們從小在宜蘭大溪漁港長大，看著父執輩在波濤中討生活。從一個小小的魚攤，到現在希望透過網路，將這份最新鮮的美味，零時差送到您的餐桌。' },
+        { title: '每日清晨現流，新鮮販售', description: '堅持不賣隔夜貨！每天清晨漁船進港，我們第一時間精選最優質的漁獲，立即進行低溫處理與真空包裝，鎖住大海最原始的鮮甜。' }
+    ],
+    brandFooterItems: [
+        { text: '大溪直送' },
+        { text: '品質保證' },
+        { text: '低溫宅配' }
+    ]
   });
 
   // --- Initial Data Fetching ---
@@ -60,7 +75,14 @@ const App: React.FC = () => {
             if (fetchedProducts.length > 0) setProducts(fetchedProducts);
             if (fetchedOrders.length > 0) setOrders(fetchedOrders);
             if (fetchedSettings) {
-                setSettings(prev => ({ ...prev, ...fetchedSettings }));
+                // Merge with defaults to ensure new fields exist
+                setSettings(prev => ({ 
+                    ...prev, 
+                    ...fetchedSettings,
+                    // Ensure arrays are initialized if missing in DB
+                    brandFeatures: fetchedSettings.brandFeatures || prev.brandFeatures,
+                    brandFooterItems: fetchedSettings.brandFooterItems || prev.brandFooterItems
+                }));
             }
             
         } catch (error) {
@@ -73,6 +95,19 @@ const App: React.FC = () => {
     loadData();
     return () => unsubscribe();
   }, [activeTab]);
+
+  // --- Dynamic Favicon ---
+  useEffect(() => {
+    if (settings.websiteFavicon) {
+      let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = settings.websiteFavicon;
+    }
+  }, [settings.websiteFavicon]);
 
   // Search State
   const [searchType, setSearchType] = useState<'id' | 'phone'>('id');
@@ -164,7 +199,7 @@ const App: React.FC = () => {
   const renderBadge = (text: string) => {
       if (text.includes('熱銷')) {
           return (
-            <div className="absolute top-3 left-3 bg-gradient-to-r from-red-500 to-orange-500 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 transform group-hover:scale-105 transition-transform">
+            <div className="absolute top-3 left-3 bg-gradient-to-r from-red-500 to-orange-500 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 transform group-hover:scale-105 transition-transform z-20">
                 <Icons.Flame size={14} fill="currentColor" />
                 {text}
             </div>
@@ -172,23 +207,31 @@ const App: React.FC = () => {
       }
       if (text.includes('限定')) {
           return (
-            <div className="absolute top-3 left-3 bg-gradient-to-r from-yellow-500 to-amber-600 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 transform group-hover:scale-105 transition-transform">
+            <div className="absolute top-3 left-3 bg-gradient-to-r from-yellow-500 to-amber-600 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 transform group-hover:scale-105 transition-transform z-20">
                 <Icons.Gift size={14} />
                 {text}
             </div>
           );
       }
       return (
-        <div className="absolute top-3 left-3 bg-blue-600 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-lg">
+        <div className="absolute top-3 left-3 bg-blue-600 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-lg z-20">
             {text}
         </div>
       );
   };
 
-  const renderProducts = () => (
+  const renderProducts = () => {
+    // Filter Products Logic
+    const filteredProducts = products.filter(p => {
+        if (p.isActive === false) return false;
+        if (selectedCategory === 'all') return true;
+        return p.category === selectedCategory;
+    });
+
+    return (
     <div className="pb-24 md:pb-8 px-4 max-w-6xl mx-auto animate-fade-in">
       <div className="py-6">
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-900 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-blue-100 dark:border-slate-700 shadow-sm relative overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-900 border border-blue-100 dark:border-slate-800 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm relative overflow-hidden">
           <div className="relative z-10">
             <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white mb-2 flex items-center">
               來自大海的極致鮮甜 
@@ -205,13 +248,56 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      {/* Category Filter - Sticky on Mobile */}
+      <div className="sticky top-0 z-20 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm -mx-4 px-4 py-3 mb-4 border-b border-transparent shadow-sm md:static md:bg-transparent md:border-none md:shadow-none md:p-0 md:mb-6 transition-all">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <button 
+               onClick={() => setSelectedCategory('all')}
+               className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
+                   selectedCategory === 'all' 
+                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
+                   : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+               }`}
+            >
+                所有商品
+            </button>
+            <button 
+               onClick={() => setSelectedCategory('store')}
+               className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                   selectedCategory === 'store' 
+                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
+                   : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+               }`}
+            >
+                <Icons.Store size={14} />
+                超取含運組
+            </button>
+            <button 
+               onClick={() => setSelectedCategory('delivery')}
+               className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                   selectedCategory === 'delivery' 
+                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
+                   : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+               }`}
+            >
+                <Icons.Truck size={14} />
+                宅配大禮包
+            </button>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="flex justify-center py-20">
             <Icons.Loading className="animate-spin text-blue-600" size={40} />
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {products.filter(p => p.isActive !== false).map((product) => (
+            {filteredProducts.length === 0 ? (
+                <div className="col-span-full text-center py-12 text-slate-400">
+                    <Icons.Fish className="mx-auto mb-2 opacity-50" size={48} />
+                    <p>此分類目前沒有商品</p>
+                </div>
+            ) : filteredProducts.map((product) => (
             <div 
                 key={product.id} 
                 className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden group flex flex-col h-full hover:shadow-md transition-all duration-300 cursor-pointer"
@@ -245,7 +331,7 @@ const App: React.FC = () => {
                     onClick={(e) => { e.stopPropagation(); handleBuyNow(product); }}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg shadow-md shadow-blue-200 dark:shadow-blue-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-auto text-sm"
                 >
-                    <Icons.Product size={16} />
+                    <Icons.Lightning size={16} fill="currentColor" />
                     直接購買
                 </button>
                 </div>
@@ -255,63 +341,93 @@ const App: React.FC = () => {
       )}
     </div>
   );
+  };
 
   const renderBrand = () => (
     <div className="pb-24 md:pb-8 pt-4 max-w-2xl mx-auto text-center animate-fade-in">
+        {/* Banner Section */}
         <div className="w-full h-48 md:h-64 rounded-2xl overflow-hidden mb-8 relative shadow-lg mx-4 md:mx-0">
              <img 
-                src="https://images.unsplash.com/photo-1534483509719-3feaee7c30da?q=80&w=1200&auto=format&fit=crop" 
-                alt="大溪漁港" 
+                src={settings.brandBannerImage || "https://images.unsplash.com/photo-1534483509719-3feaee7c30da?q=80&w=1200&auto=format&fit=crop"} 
+                alt="Brand Banner" 
                 className="w-full h-full object-cover"
              />
              <div className="absolute inset-0 bg-black/40 flex items-center justify-center flex-col">
-                <h2 className="text-3xl font-bold text-white mb-2 drop-shadow-md">來自大溪漁港的堅持</h2>
+                <h2 className="text-3xl font-bold text-white mb-2 drop-shadow-md px-4">{settings.brandBannerTitle || "來自大溪漁港的堅持"}</h2>
                 <div className="w-16 h-1 bg-blue-500 rounded-full"></div>
              </div>
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 text-left space-y-6 mx-4 md:mx-0">
+            {/* Feature 1 */}
             <div className="flex items-start gap-4">
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400 flex-shrink-0">
-                    <Icons.Fish size={24} />
+                <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                   {settings.brandFeatures?.[0]?.iconUrl ? (
+                      <img src={settings.brandFeatures[0].iconUrl} alt="" className="w-full h-full object-cover" />
+                   ) : (
+                      <Icons.Fish size={24} className="text-blue-600 dark:text-blue-400" />
+                   )}
                 </div>
                 <div>
-                    <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">漁港攤販起家，傳承三代</h3>
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">
+                        {settings.brandFeatures?.[0]?.title || "漁港攤販起家，傳承三代"}
+                    </h3>
                     <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm md:text-base">
-                        我們從小在宜蘭大溪漁港長大，看著父執輩在波濤中討生活。從一個小小的魚攤，到現在希望透過網路，將這份最新鮮的美味，零時差送到您的餐桌。
+                        {settings.brandFeatures?.[0]?.description || "我們從小在宜蘭大溪漁港長大，看著父執輩在波濤中討生活。從一個小小的魚攤，到現在希望透過網路，將這份最新鮮的美味，零時差送到您的餐桌。"}
                     </p>
                 </div>
             </div>
 
+            {/* Feature 2 */}
             <div className="flex items-start gap-4">
-                <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-full text-orange-600 dark:text-orange-400 flex-shrink-0">
-                    <Icons.Truck size={24} />
+                <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                   {settings.brandFeatures?.[1]?.iconUrl ? (
+                      <img src={settings.brandFeatures[1].iconUrl} alt="" className="w-full h-full object-cover" />
+                   ) : (
+                      <Icons.Truck size={24} className="text-orange-600 dark:text-orange-400" />
+                   )}
                 </div>
                 <div>
-                    <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">每日清晨現流，新鮮販售</h3>
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">
+                        {settings.brandFeatures?.[1]?.title || "每日清晨現流，新鮮販售"}
+                    </h3>
                     <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm md:text-base">
-                        堅持不賣隔夜貨！每天清晨漁船進港，我們第一時間精選最優質的漁獲，立即進行低溫處理與真空包裝，鎖住大海最原始的鮮甜。
+                        {settings.brandFeatures?.[1]?.description || "堅持不賣隔夜貨！每天清晨漁船進港，我們第一時間精選最優質的漁獲，立即進行低溫處理與真空包裝，鎖住大海最原始的鮮甜。"}
                     </p>
                 </div>
             </div>
 
+            {/* Footer Icons Section */}
             <div className="pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-center gap-8 text-slate-400 dark:text-slate-500">
-                <div className="flex flex-col items-center gap-2">
-                    <Icons.Map size={24} className="text-blue-500 dark:text-blue-400" />
-                    <span className="text-xs font-bold">大溪直送</span>
-                </div>
-                <div className="flex flex-col items-center gap-2">
-                    <Icons.Check size={24} className="text-blue-500 dark:text-blue-400" />
-                    <span className="text-xs font-bold">品質保證</span>
-                </div>
-                <div className="flex flex-col items-center gap-2 relative">
-                    <Icons.Truck size={24} className="text-blue-500 dark:text-blue-400" />
-                    <span className="text-xs font-bold">低溫宅配</span>
-                </div>
+                {settings.brandFooterItems?.map((item, idx) => (
+                    <div key={idx} className="flex flex-col items-center gap-2">
+                         {item.iconUrl ? (
+                            <img src={item.iconUrl} alt="" className="w-6 h-6 object-contain" />
+                         ) : (
+                             // Fallback default icons based on index
+                            idx === 0 ? <Icons.Map size={24} className="text-blue-500 dark:text-blue-400" /> :
+                            idx === 1 ? <Icons.Check size={24} className="text-blue-500 dark:text-blue-400" /> :
+                            <Icons.Truck size={24} className="text-blue-500 dark:text-blue-400" />
+                         )}
+                        <span className="text-xs font-bold">{item.text}</span>
+                    </div>
+                ))}
             </div>
         </div>
     </div>
   );
+
+  const getStatusColor = (status: Order['status']) => {
+    switch (status) {
+        case '訂單完成': return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400';
+        case '已出貨': return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
+        case '商品處理中': return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400';
+        case '待匯款': return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400';
+        case '匯款逾期': return 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400';
+        case '訂單取消': return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+        default: return 'bg-slate-100 dark:bg-slate-800 text-slate-600';
+    }
+  };
 
   const renderOrderList = (orders: Order[]) => {
       if (orders.length === 0) {
@@ -328,15 +444,7 @@ const App: React.FC = () => {
         <div key={order.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
             <div className="flex justify-between items-center mb-3 border-b border-slate-50 dark:border-slate-800 pb-3">
                 <span className="text-xs font-mono text-slate-400">{order.id}</span>
-                <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                    order.status === '已完成' 
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
-                    : order.status === '已出貨'
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    : order.status === '已取消'
-                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                    : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                }`}>
+                <span className={`text-xs font-bold px-2 py-1 rounded-full ${getStatusColor(order.status)}`}>
                     {order.status}
                 </span>
             </div>
@@ -407,7 +515,7 @@ const App: React.FC = () => {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={searchType === 'id' ? "輸入訂單編號" : "輸入手機號碼"}
-                    className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button 
                     onClick={handleSearchOrder}
@@ -436,9 +544,9 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-300">
-      <Header activeTab={activeTab} onTabChange={setActiveTab} />
-      <main>
+    <div className="min-h-screen bg-slate-50 dark:bg-black font-sans transition-colors duration-300 flex flex-col">
+      <Header activeTab={activeTab} onTabChange={setActiveTab} settings={settings} />
+      <main className="flex-1">
         {activeTab === Tab.PRODUCTS && renderProducts()}
         {activeTab === Tab.BRAND && renderBrand()}
         {activeTab === Tab.ORDERS && renderOrders()}
@@ -454,6 +562,11 @@ const App: React.FC = () => {
             />
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="py-6 text-center text-slate-400 text-xs dark:text-slate-600 pb-24 md:pb-6">
+          <p>© {new Date().getFullYear()} 海鮮小劉 Seafood Liu. All Rights Reserved.</p>
+      </footer>
 
       <BottomNav currentTab={activeTab} onTabChange={setActiveTab} />
 
@@ -487,14 +600,14 @@ const App: React.FC = () => {
                               type="email" 
                               autoFocus
                               placeholder="管理員 Email"
-                              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                              className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white placeholder-slate-400"
                               required
                           />
                           <input 
                               name="password"
                               type="password" 
                               placeholder="密碼"
-                              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                              className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white placeholder-slate-400"
                               required
                           />
                       </div>
