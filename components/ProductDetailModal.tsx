@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Product } from '../types';
 import { Icons } from './Icons';
 
@@ -11,6 +10,14 @@ interface ProductDetailModalProps {
 
 const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClose, onBuy }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  // --- Scroll Lock Effect ---
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+        document.body.style.overflow = '';
+    };
+  }, []);
 
   const nextImage = () => {
     setCurrentImageIndex((prev) => (prev + 1) % product.images.length);
