@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Tab, Product, Order, SiteSettings } from './types';
 import { Icons } from './components/Icons';
@@ -249,13 +248,14 @@ const App: React.FC = () => {
       </div>
 
       {/* Category Filter - Sticky on Mobile */}
-      <div className="sticky top-0 z-20 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm -mx-4 px-4 py-3 mb-4 border-b border-transparent shadow-sm md:static md:bg-transparent md:border-none md:shadow-none md:p-0 md:mb-6 transition-all">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+      {/* Increased padding-bottom (pb-3) to ensure shadow is not clipped by overflow-x-auto */}
+      <div className="sticky top-0 z-40 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm -mx-4 px-4 pt-3 pb-1 mb-2 md:static md:bg-transparent md:border-none md:shadow-none md:p-0 md:mb-6 transition-all">
+        <div className="flex gap-2 overflow-x-auto pb-4 px-1 scrollbar-hide">
             <button 
                onClick={() => setSelectedCategory('all')}
                className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
                    selectedCategory === 'all' 
-                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
+                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-white dark:ring-slate-900' 
                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
                }`}
             >
@@ -265,7 +265,7 @@ const App: React.FC = () => {
                onClick={() => setSelectedCategory('store')}
                className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
                    selectedCategory === 'store' 
-                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
+                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-white dark:ring-slate-900' 
                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
                }`}
             >
@@ -276,7 +276,7 @@ const App: React.FC = () => {
                onClick={() => setSelectedCategory('delivery')}
                className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
                    selectedCategory === 'delivery' 
-                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
+                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-white dark:ring-slate-900' 
                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
                }`}
             >
