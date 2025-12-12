@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, StoreType, PaymentMethod, ShippingInfo, Order, SiteSettings } from '../types';
 import { Icons } from './Icons';
@@ -155,6 +156,9 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
       
       setOrderId(newOrderId);
       
+      // Determine initial status based on payment method
+      const initialStatus = settings.enableOnlinePayment ? '商品處理中' : '待匯款';
+
       const newOrder: Order = {
           id: newOrderId,
           customerName: shipping.name,
@@ -162,7 +166,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
           date: timestamp,
           lastUpdated: timestamp,
           total: product.price,
-          status: '處理中',
+          status: initialStatus,
           items: [product.title]
       };
       createdOrderRef.current = newOrder;
@@ -422,7 +426,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                              <Icons.Info className="text-orange-500 flex-shrink-0 mt-0.5" size={20} />
                              <div className="space-y-2">
                                  <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">
-                                     {settings.storeFallbackMessage || '請使用下方連結查詢門市，並將「門市名稱」與「店號」填寫於下方欄位。'}
+                                     {settings.storeFallbackMessage || '請使用下方連結查詢7-11門市，並將「門市名稱」與「店號」填寫於下方欄位。'}
                                  </p>
                                  <a 
                                     href={settings.storeLookupLink || '#'} 
@@ -437,13 +441,13 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                     </div>
                     
                     <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">填寫取貨門市 (名稱/店號)</label>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">填寫取貨門市 (7-11 門市名稱、店號)</label>
                         <input 
                             type="text" 
                             value={shipping.storeName}
                             onChange={(e) => setShipping({...shipping, storeName: e.target.value})}
                             onBlur={() => handleBlur('store')}
-                            placeholder="例如：全家長春店 (店號: 12345)"
+                            placeholder="例如：永吉門市（店號：252975）"
                             className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white shadow-sm"
                         />
                     </div>
