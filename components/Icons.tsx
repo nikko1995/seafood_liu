@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
   ShoppingBag, 
@@ -30,7 +31,9 @@ import {
   Edit,
   Package,
   ExternalLink,
-  Save
+  Save,
+  Zap,
+  Upload
 } from 'lucide-react';
 
 export const Icons = {
@@ -65,5 +68,7 @@ export const Icons = {
   Edit: Edit,
   Package: Package,
   ExternalLink: ExternalLink,
-  Save: Save
+  Save: Save,
+  Lightning: Zap,
+  Upload: Upload
 };
