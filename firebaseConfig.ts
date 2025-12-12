@@ -1,7 +1,8 @@
+
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getAuth } from "firebase/auth";
+import * as firebaseAuth from "firebase/auth";
 
 // -----------------------------------------------------------
 // 您的專案資訊 (seafood-liu)
@@ -29,7 +30,8 @@ try {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     storage = getStorage(app);
-    auth = getAuth(app);
+    // 使用轉型 (any) 來避免型別檢查錯誤
+    auth = (firebaseAuth as any).getAuth(app);
     console.log("🔥 Firebase 連線成功 (seafood-liu)！");
 } catch (error) {
     console.error("Firebase 初始化失敗:", error);
