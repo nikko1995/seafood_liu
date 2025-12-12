@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, StoreType, PaymentMethod, ShippingInfo, Order, SiteSettings } from '../types';
 import { Icons } from './Icons';
@@ -80,6 +79,14 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
       phone: false,
       store: false
   });
+
+  // --- Scroll Lock Effect ---
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+        document.body.style.overflow = '';
+    };
+  }, []);
 
   const isNameValid = shipping.name.trim().length > 0;
   const isPhoneValid = /^09\d{8}$/.test(shipping.phone);
@@ -618,18 +625,34 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
          </div>
 
          <div className="flex flex-col gap-3 w-full">
+             {/* Main Action: Add Line */}
+             <a 
+                href="https://line.me/R/ti/p/@110zazyo"
+                target="_blank"
+                rel="noreferrer"
+                className="w-full bg-[#00C300] hover:bg-[#00B300] text-white font-bold py-3.5 rounded-xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+             >
+                <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center">
+                    <span className="text-[#00C300] font-bold text-xs italic pr-0.5">L</span>
+                </div>
+                加入海鮮小劉 LINE 官方帳號
+             </a>
+
+             {/* Secondary: Check Order */}
              <button 
                 onClick={handleCompleteFlow} // Navigates to Orders tab via App callback
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-200 dark:shadow-blue-900/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold py-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
              >
                 <Icons.Order size={18} />
                 前往訂單查詢
              </button>
+
+             {/* Tertiary: Share */}
              <button 
                 onClick={handleShareWebsite}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold py-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                className="w-full text-slate-400 dark:text-slate-500 font-bold py-2 rounded-xl hover:text-slate-600 dark:hover:text-slate-300 transition-colors flex items-center justify-center gap-2 text-sm"
              >
-                <Icons.Share size={18} />
+                <Icons.Share size={16} />
                 分享網站給朋友
              </button>
          </div>
