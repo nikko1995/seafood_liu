@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Tab, Product, Order, SiteSettings } from './types';
 import { Icons } from './components/Icons';
@@ -7,6 +8,7 @@ import ProductDetailModal from './components/ProductDetailModal';
 import Header from './components/Header';
 import AdminPanel from './components/AdminPanel';
 import { fetchProducts, fetchOrders, fetchSettings } from './services/firebaseService';
+import { loginAdmin, subscribeToAuth, logoutAdmin } from './services/authService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.PRODUCTS);
@@ -18,6 +20,9 @@ const App: React.FC = () => {
   // --- State Management ---
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  
+  // Auth State (目前的登入者) - 使用 any 避免型別錯誤
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
   
   // Default Settings
   const [settings, setSettings] = useState<SiteSettings>({
@@ -33,10 +38,19 @@ const App: React.FC = () => {
 
   // --- Initial Data Fetching ---
   useEffect(() => {
+    // 1. 監聽登入狀態改變
+    const unsubscribe = subscribeToAuth((user) => {
+        setCurrentUser(user);
+        // 如果使用者登出，且當前在後台頁面，強制踢回首頁
+        if (!user && activeTab === Tab.ADMIN) {
+            setActiveTab(Tab.PRODUCTS);
+        }
+    });
+
+    // 2. Load Data
     const loadData = async () => {
         setIsLoading(true);
         try {
-            // Load all data in parallel
             const [fetchedProducts, fetchedOrders, fetchedSettings] = await Promise.all([
                 fetchProducts(),
                 fetchOrders(),
@@ -45,7 +59,9 @@ const App: React.FC = () => {
 
             if (fetchedProducts.length > 0) setProducts(fetchedProducts);
             if (fetchedOrders.length > 0) setOrders(fetchedOrders);
-            if (fetchedSettings) setSettings(fetchedSettings);
+            if (fetchedSettings) {
+                setSettings(prev => ({ ...prev, ...fetchedSettings }));
+            }
             
         } catch (error) {
             console.error("Failed to load app data:", error);
@@ -55,7 +71,8 @@ const App: React.FC = () => {
     };
 
     loadData();
-  }, []);
+    return () => unsubscribe();
+  }, [activeTab]);
 
   // Search State
   const [searchType, setSearchType] = useState<'id' | 'phone'>('id');
@@ -65,6 +82,8 @@ const App: React.FC = () => {
 
   // Admin Login State
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const handleOpenDetail = (product: Product) => {
     setDetailProduct(product);
@@ -77,14 +96,9 @@ const App: React.FC = () => {
   };
 
   const handleCheckoutComplete = (newOrder: Order) => {
-    // Optimistic Update: Add to local state immediately
     setOrders((prev) => [newOrder, ...prev]);
-    
-    // Close modal and navigate
     setIsCheckoutOpen(false);
     setActiveTab(Tab.ORDERS);
-    
-    // Reset search
     setHasSearched(false);
     setSearchResult(null);
     setSearchQuery(''); 
@@ -92,7 +106,6 @@ const App: React.FC = () => {
 
   const handleSearchOrder = () => {
     if (!searchQuery.trim()) return;
-    
     setHasSearched(true);
     const results = orders.filter(order => {
         if (searchType === 'id') {
@@ -107,20 +120,45 @@ const App: React.FC = () => {
   const handleSecretEntry = (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
-      setIsAdminLoginOpen(true);
+      // 判斷邏輯：如果已登入，直接進後台；如果沒登入，開登入框
+      if (currentUser) {
+          setActiveTab(Tab.ADMIN);
+      } else {
+          setIsAdminLoginOpen(true);
+      }
   };
 
-  const handleAdminLogin = (e: React.FormEvent<HTMLFormElement>) => {
+  // 處理真實的 Firebase 登入
+  const handleAdminLogin = async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const formData = new FormData(e.currentTarget);
+      const email = formData.get('email') as string;
       const password = formData.get('password') as string;
       
-      if (password === "admin888") {
-          setActiveTab(Tab.ADMIN);
+      setLoginError('');
+      setIsLoggingIn(true);
+
+      try {
+          await loginAdmin(email, password); // 呼叫 Firebase
           setIsAdminLoginOpen(false);
-      } else {
-          alert("密碼錯誤");
+          setActiveTab(Tab.ADMIN);
+      } catch (error: any) {
+          console.error("Login failed", error);
+          if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+             setLoginError('帳號或密碼錯誤');
+          } else if (error.code === 'auth/too-many-requests') {
+             setLoginError('嘗試失敗太多次，請稍後再試');
+          } else {
+             setLoginError('登入失敗，請檢查網路');
+          }
+      } finally {
+          setIsLoggingIn(false);
       }
+  };
+
+  const handleAdminLogout = async () => {
+      await logoutAdmin();
+      setActiveTab(Tab.PRODUCTS);
   };
 
   const renderBadge = (text: string) => {
@@ -157,7 +195,7 @@ const App: React.FC = () => {
               <button 
                 onClick={handleSecretEntry}
                 className="text-2xl ml-2 cursor-pointer select-none hover:scale-125 active:scale-95 transition-transform focus:outline-none"
-                title="" 
+                title={currentUser ? "進入後台" : "管理員登入"} 
               >
                 🌊
               </button>
@@ -404,7 +442,7 @@ const App: React.FC = () => {
         {activeTab === Tab.PRODUCTS && renderProducts()}
         {activeTab === Tab.BRAND && renderBrand()}
         {activeTab === Tab.ORDERS && renderOrders()}
-        {activeTab === Tab.ADMIN && (
+        {activeTab === Tab.ADMIN && currentUser && (
             <AdminPanel 
                 products={products} 
                 setProducts={setProducts} 
@@ -412,6 +450,7 @@ const App: React.FC = () => {
                 setOrders={setOrders}
                 settings={settings}
                 setSettings={setSettings}
+                onLogout={handleAdminLogout}
             />
         )}
       </main>
@@ -439,16 +478,33 @@ const App: React.FC = () => {
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
               <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 dark:border-slate-800">
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                      <Icons.Settings size={20} /> 管理員登入
+                      <Icons.Settings size={20} /> 管理員登入 (Firebase)
                   </h3>
                   <form onSubmit={handleAdminLogin}>
-                      <input 
-                          name="password"
-                          type="password" 
-                          autoFocus
-                          placeholder="請輸入密碼"
-                          className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                      />
+                      <div className="space-y-3 mb-4">
+                          <input 
+                              name="email"
+                              type="email" 
+                              autoFocus
+                              placeholder="管理員 Email"
+                              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                              required
+                          />
+                          <input 
+                              name="password"
+                              type="password" 
+                              placeholder="密碼"
+                              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                              required
+                          />
+                      </div>
+                      
+                      {loginError && (
+                          <p className="text-red-500 text-xs font-bold mb-3 flex items-center gap-1">
+                              <Icons.Alert size={12}/> {loginError}
+                          </p>
+                      )}
+
                       <div className="flex gap-3">
                           <button 
                               type="button" 
@@ -459,9 +515,10 @@ const App: React.FC = () => {
                           </button>
                           <button 
                               type="submit"
-                              className="flex-1 py-2.5 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-blue-900/30 transition-colors"
+                              disabled={isLoggingIn}
+                              className="flex-1 py-2.5 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-blue-900/30 transition-colors disabled:opacity-50 flex justify-center items-center"
                           >
-                              進入
+                              {isLoggingIn ? <Icons.Loading className="animate-spin" size={20} /> : '登入'}
                           </button>
                       </div>
                   </form>
