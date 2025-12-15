@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Tab, Product, Order, SiteSettings } from './types';
 import { Icons } from './components/Icons';
 import BottomNav from './components/BottomNav';
@@ -54,6 +54,9 @@ const App: React.FC = () => {
     telegramChatId: ''
   });
 
+  // Keep track of locally created orders to prevent overwrite by stale fetches
+  const lastCreatedOrder = useRef<Order | null>(null);
+
   // --- Initial Data Fetching ---
   useEffect(() => {
     // 1. 監聽登入狀態改變
@@ -76,7 +79,18 @@ const App: React.FC = () => {
             ]);
 
             if (fetchedProducts.length > 0) setProducts(fetchedProducts);
-            if (fetchedOrders.length > 0) setOrders(fetchedOrders);
+            
+            // Logic to merge fetched orders with locally created order (if it's missing from DB fetch due to latency)
+            let mergedOrders = fetchedOrders;
+            if (lastCreatedOrder.current) {
+                const found = fetchedOrders.find(o => o.id === lastCreatedOrder.current?.id);
+                if (!found) {
+                    // Manually inject the just-created order at the top
+                    mergedOrders = [lastCreatedOrder.current, ...fetchedOrders];
+                }
+            }
+            if (mergedOrders.length > 0) setOrders(mergedOrders);
+
             if (fetchedSettings) {
                 // Merge with defaults to ensure new fields exist
                 setSettings(prev => ({ 
@@ -97,7 +111,7 @@ const App: React.FC = () => {
 
     loadData();
     return () => unsubscribe();
-  }, [activeTab]);
+  }, [activeTab]); // Depend on activeTab to refresh data when switching tabs
 
   // --- Dynamic Favicon ---
   useEffect(() => {
@@ -123,6 +137,9 @@ const App: React.FC = () => {
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // Bank Info Modal State
+  const [isBankInfoOpen, setIsBankInfoOpen] = useState(false);
+
   const handleOpenDetail = (product: Product) => {
     setDetailProduct(product);
   };
@@ -134,9 +151,17 @@ const App: React.FC = () => {
   };
 
   const handleCheckoutComplete = (newOrder: Order) => {
+    // 1. Immediately update local state so UI reflects it without waiting for fetch
     setOrders((prev) => [newOrder, ...prev]);
+    // 2. Store in ref to protect against stale fetches on tab switch
+    lastCreatedOrder.current = newOrder;
+
     setIsCheckoutOpen(false);
-    setActiveTab(Tab.ORDERS);
+    
+    // 3. User requested: Go back to Home (Products) after success, NOT Orders tab.
+    setActiveTab(Tab.PRODUCTS);
+    
+    // Reset search
     setHasSearched(false);
     setSearchResult(null);
     setSearchQuery(''); 
@@ -146,10 +171,11 @@ const App: React.FC = () => {
     if (!searchQuery.trim()) return;
     setHasSearched(true);
     const results = orders.filter(order => {
+        const query = searchQuery.trim().toLowerCase();
         if (searchType === 'id') {
-            return order.id.toLowerCase().includes(searchQuery.toLowerCase());
+            return order.id.toLowerCase().includes(query);
         } else {
-            return order.customerPhone.includes(searchQuery);
+            return order.customerPhone.includes(query);
         }
     });
     setSearchResult(results);
@@ -197,6 +223,11 @@ const App: React.FC = () => {
   const handleAdminLogout = async () => {
       await logoutAdmin();
       setActiveTab(Tab.PRODUCTS);
+  };
+
+  const handleCopy = (text: string) => {
+      navigator.clipboard.writeText(text);
+      alert('已複製到剪貼簿！');
   };
 
   const renderBadge = (text: string) => {
@@ -471,6 +502,19 @@ const App: React.FC = () => {
                     <p key={i} className="text-slate-700 dark:text-slate-300 font-medium text-sm">{item}</p>
                 ))}
             </div>
+
+            {/* View Bank Info Button - Only for '待匯款' status and when Online Payment is DISABLED */}
+            {order.status === '待匯款' && !settings.enableOnlinePayment && (
+                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <button 
+                        onClick={() => setIsBankInfoOpen(true)}
+                        className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline"
+                    >
+                        <Icons.Card size={14} />
+                        查看匯款帳號
+                    </button>
+                </div>
+            )}
         </div>
     ));
   };
@@ -540,6 +584,46 @@ const App: React.FC = () => {
     </div>
   );
 
+  const renderBankInfoModal = () => (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 dark:border-slate-800 relative">
+              <button onClick={() => setIsBankInfoOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><Icons.Close /></button>
+              
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Icons.Card className="text-blue-600" size={20} /> 匯款資訊
+              </h3>
+              
+              <div className="space-y-4 bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
+                 <div>
+                     <p className="text-xs text-slate-500 mb-1">銀行代碼 / 名稱</p>
+                     <p className="font-bold text-slate-900 dark:text-white text-lg">{settings.bankName}</p>
+                 </div>
+                 
+                 <div>
+                     <p className="text-xs text-slate-500 mb-1">匯款帳號</p>
+                     <div className="flex items-center gap-3">
+                         <p className="font-mono font-bold text-blue-600 dark:text-blue-400 text-2xl tracking-wide">
+                             {settings.bankAccount}
+                         </p>
+                         <button 
+                             onClick={() => handleCopy(settings.bankAccount)}
+                             className="p-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm"
+                             title="複製帳號"
+                         >
+                             <Icons.Copy size={16} />
+                         </button>
+                     </div>
+                 </div>
+
+                 <div>
+                      <p className="text-xs text-slate-500 mb-1">戶名</p>
+                      <p className="font-medium text-slate-900 dark:text-white">{settings.bankAccountName}</p>
+                 </div>
+              </div>
+          </div>
+      </div>
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-black font-sans transition-colors duration-300 flex flex-col">
       <Header activeTab={activeTab} onTabChange={setActiveTab} settings={settings} />
@@ -583,6 +667,9 @@ const App: React.FC = () => {
             settings={settings}
         />
       )}
+
+      {/* Bank Info Modal */}
+      {isBankInfoOpen && renderBankInfoModal()}
 
       {isAdminLoginOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
