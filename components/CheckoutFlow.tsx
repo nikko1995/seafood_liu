@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, StoreType, PaymentMethod, ShippingInfo, Order, SiteSettings } from '../types';
+import { Product, StoreType, PaymentMethod, ShippingInfo, Order, SiteSettings, DeliveryTimeSlot } from '../types';
 import { Icons } from './Icons';
 import { createOrder } from '../services/firebaseService';
+import { sendTelegramNotification } from '../services/telegramService';
 
 interface CheckoutFlowProps {
   product: Product;
@@ -9,6 +11,32 @@ interface CheckoutFlowProps {
   onComplete: (order: Order) => void;
   settings: SiteSettings;
 }
+
+// Taiwan Administrative Divisions
+const TAIWAN_AREAS: { [key: string]: string[] } = {
+  '台北市': ['中正區', '大同區', '中山區', '松山區', '大安區', '萬華區', '信義區', '士林區', '北投區', '內湖區', '南港區', '文山區'],
+  '新北市': ['板橋區', '新莊區', '中和區', '永和區', '土城區', '樹林區', '三峽區', '鶯歌區', '三重區', '蘆洲區', '五股區', '泰山區', '林口區', '八里區', '淡水區', '三芝區', '石門區', '汐止區', '瑞芳區', '貢寮區', '平溪區', '雙溪區', '新店區', '深坑區', '石碇區', '坪林區', '烏來區'],
+  '基隆市': ['仁愛區', '信義區', '中正區', '中山區', '安樂區', '暖暖區', '七堵區'],
+  '桃園市': ['桃園區', '中壢區', '大溪區', '楊梅區', '蘆竹區', '大園區', '龜山區', '八德區', '龍潭區', '平鎮區', '新屋區', '觀音區', '復興區'],
+  '新竹市': ['東區', '北區', '香山區'],
+  '新竹縣': ['竹北市', '竹東鎮', '新埔鎮', '關西鎮', '湖口鄉', '新豐鄉', '芎林鄉', '橫山鄉', '北埔鄉', '寶山鄉', '峨眉鄉', '尖石鄉', '五峰鄉'],
+  '苗栗縣': ['苗栗市', '頭份市', '苑裡鎮', '通霄鎮', '竹南鎮', '後龍鎮', '卓蘭鎮', '大湖鄉', '公館鄉', '銅鑼鄉', '南庄鄉', '頭屋鄉', '三義鄉', '西湖鄉', '造橋鄉', '三灣鄉', '獅潭鄉', '泰安鄉'],
+  '台中市': ['中區', '東區', '南區', '西區', '北區', '北屯區', '西屯區', '南屯區', '太平區', '大里區', '霧峰區', '烏日區', '豐原區', '后里區', '石岡區', '東勢區', '和平區', '新社區', '潭子區', '大雅區', '神岡區', '大肚區', '沙鹿區', '龍井區', '梧棲區', '清水區', '大甲區', '外埔區', '大安區'],
+  '彰化縣': ['彰化市', '員林市', '和美鎮', '鹿港鎮', '溪湖鎮', '二林鎮', '田中鎮', '北斗鎮', '花壇鄉', '芬園鄉', '大村鄉', '埔心鄉', '永靖鄉', '社頭鄉', '二水鄉', '田尾鄉', '埤頭鄉', '芳苑鄉', '大城鄉', '竹塘鄉', '溪州鄉', '秀水鄉', '伸港鄉', '福興鄉', '線西鄉', '埔鹽鄉'],
+  '南投縣': ['南投市', '埔里鎮', '草屯鎮', '竹山鎮', '集集鎮', '名間鄉', '鹿谷鄉', '中寮鄉', '魚池鄉', '國姓鄉', '水里鄉', '信義鄉', '仁愛鄉'],
+  '雲林縣': ['斗六市', '斗南鎮', '虎尾鎮', '西螺鎮', '土庫鎮', '北港鎮', '古坑鄉', '大埤鄉', '莿桐鄉', '林內鄉', '二崙鄉', '崙背鄉', '麥寮鄉', '東勢鄉', '褒忠鄉', '臺西鄉', '元長鄉', '四湖鄉', '口湖鄉', '水林鄉'],
+  '嘉義市': ['東區', '西區'],
+  '嘉義縣': ['太保市', '朴子市', '布袋鎮', '大林鎮', '民雄鄉', '溪口鄉', '新港鄉', '六腳鄉', '東石鄉', '義竹鄉', '鹿草鄉', '水上鄉', '中埔鄉', '竹崎鄉', '梅山鄉', '番路鄉', '大埔鄉', '阿里山鄉'],
+  '台南市': ['中西區', '東區', '南區', '北區', '安平區', '安南區', '永康區', '歸仁區', '新化區', '左鎮區', '玉井區', '楠西區', '南化區', '仁德區', '關廟區', '龍崎區', '官田區', '麻豆區', '佳里區', '西港區', '七股區', '將軍區', '學甲區', '北門區', '新營區', '後壁區', '白河區', '東山區', '六甲區', '下營區', '柳營區', '鹽水區', '善化區', '大內區', '山上區', '新市區', '安定區'],
+  '高雄市': ['楠梓區', '左營區', '鼓山區', '三民區', '鹽埕區', '前金區', '新興區', '苓雅區', '前鎮區', '旗津區', '小港區', '鳳山區', '林園區', '大寮區', '大樹區', '大社區', '仁武區', '鳥松區', '岡山區', '橋頭區', '燕巢區', '田寮區', '阿蓮區', '路竹區', '湖內區', '茄萣區', '永安區', '彌陀區', '梓官區', '旗山區', '美濃區', '六龜區', '甲仙區', '杉林區', '內門區', '茂林區', '桃源區', '那瑪夏區'],
+  '屏東縣': ['屏東市', '潮州鎮', '東港鎮', '恆春鎮', '萬丹鄉', '長治鄉', '麟洛鄉', '九如鄉', '里港鄉', '鹽埔鄉', '高樹鄉', '萬巒鄉', '內埔鄉', '竹田鄉', '新埤鄉', '枋寮鄉', '新園鄉', '崁頂鄉', '林邊鄉', '南州鄉', '佳冬鄉', '琉球鄉', '車城鄉', '滿州鄉', '枋山鄉', '三地門鄉', '霧臺鄉', '瑪家鄉', '泰武鄉', '來義鄉', '春日鄉', '獅子鄉', '牡丹鄉'],
+  '宜蘭縣': ['宜蘭市', '羅東鎮', '蘇澳鎮', '頭城鎮', '礁溪鄉', '壯圍鄉', '員山鄉', '冬山鄉', '五結鄉', '三星鄉', '大同鄉', '南澳鄉'],
+  '花蓮縣': ['花蓮市', '鳳林鎮', '玉里鎮', '新城鄉', '吉安鄉', '壽豐鄉', '光復鄉', '豐濱鄉', '瑞穗鄉', '富里鄉', '秀林鄉', '萬榮鄉', '卓溪鄉'],
+  '台東縣': ['台東市', '成功鎮', '關山鎮', '卑南鄉', '大武鄉', '太麻里鄉', '東河鄉', '長濱鄉', '鹿野鄉', '池上鄉', '綠島鄉', '延平鄉', '海端鄉', '達仁鄉', '金峰鄉', '蘭嶼鄉'],
+  '澎湖縣': ['馬公市', '湖西鄉', '白沙鄉', '西嶼鄉', '望安鄉', '七美鄉'],
+  '金門縣': ['金城鎮', '金湖鎮', '金沙鎮', '金寧鄉', '烈嶼鄉', '烏坵鄉'],
+  '連江縣': ['南竿鄉', '北竿鄉', '莒光鄉', '東引鄉']
+};
 
 // Mock Data for Stores
 const MOCK_STORES = {
@@ -63,21 +91,41 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
 
   const createdOrderRef = useRef<Order | null>(null);
 
+  // Check Category
+  const isDelivery = product.category === 'delivery';
+
   // Form State
   const [shipping, setShipping] = useState<ShippingInfo>({
     name: '',
     phone: '',
-    storeType: null, // No default selection
-    storeName: ''
+    alternativePhone: '',
+    storeType: null, 
+    storeName: '',
+    city: '台北市',
+    district: TAIWAN_AREAS['台北市'][0],
+    address: '',
+    timeSlot: DeliveryTimeSlot.UNSPECIFIED
   });
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.APPLE_PAY);
   const [orderId, setOrderId] = useState('');
+
+  // Update districts when city changes
+  useEffect(() => {
+    if (shipping.city && TAIWAN_AREAS[shipping.city]) {
+        // If current district is not in new city's list, reset it
+        const newDistricts = TAIWAN_AREAS[shipping.city];
+        if (!shipping.district || !newDistricts.includes(shipping.district)) {
+            setShipping(prev => ({ ...prev, district: newDistricts[0] }));
+        }
+    }
+  }, [shipping.city]);
 
   // Validation State
   const [touched, setTouched] = useState({
       name: false,
       phone: false,
-      store: false
+      store: false,
+      address: false
   });
 
   // --- Scroll Lock Effect ---
@@ -91,13 +139,22 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
   const isNameValid = shipping.name.trim().length > 0;
   const isPhoneValid = /^09\d{8}$/.test(shipping.phone);
   
-  const isStoreSelected = settings.enableStoreIntegration 
-    ? (shipping.storeName.length > 0 && shipping.storeType !== null)
-    : (shipping.storeName.length > 0);
+  // Validation based on Delivery Type
+  const isStoreSelected = isDelivery 
+    ? false // Not needed for delivery
+    : settings.enableStoreIntegration 
+        ? (shipping.storeName.length > 0 && shipping.storeType !== null)
+        : (shipping.storeName.length > 0);
+  
+  const isAddressValid = isDelivery
+    ? (shipping.address?.trim().length || 0) > 0 && !!shipping.city && !!shipping.district
+    : true;
 
-  const isStep1Valid = isNameValid && isPhoneValid && isStoreSelected;
+  const isStep1Valid = isDelivery 
+    ? (isNameValid && isPhoneValid && isAddressValid)
+    : (isNameValid && isPhoneValid && isStoreSelected);
 
-  const handleBlur = (field: 'name' | 'phone' | 'store') => {
+  const handleBlur = (field: 'name' | 'phone' | 'store' | 'address') => {
       setTouched(prev => ({ ...prev, [field]: true }));
   };
 
@@ -132,7 +189,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
 
   const handleNext = async () => {
     if (step === 1) {
-        setTouched({ name: true, phone: true, store: true });
+        setTouched({ name: true, phone: true, store: true, address: true });
         if (!isStep1Valid) return;
         setStep(2);
     } else if (step === 2) {
@@ -166,24 +223,49 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
       // Determine initial status based on payment method
       const initialStatus = settings.enableOnlinePayment ? '商品處理中' : '待匯款';
 
+      // Construct Address String
+      const fullAddress = isDelivery 
+         ? `${shipping.city}${shipping.district}${shipping.address}`
+         : `${shipping.storeName} (${shipping.storeType === StoreType.MANUAL_INPUT ? '手動輸入' : shipping.storeType})`;
+
       const newOrder: Order = {
           id: newOrderId,
           customerName: shipping.name,
-          customerPhone: shipping.phone,
+          customerPhone: shipping.phone, // Primary mobile
           date: timestamp,
           lastUpdated: timestamp,
           total: product.price,
           status: initialStatus,
-          items: [product.title]
+          items: [product.title],
+          // Delivery Details
+          shippingType: isDelivery ? 'delivery' : 'store',
+          shippingAddress: fullAddress + (isDelivery && shipping.alternativePhone ? ` (備用: ${shipping.alternativePhone})` : ''),
+          deliveryTimeSlot: isDelivery ? shipping.timeSlot : undefined
       };
       createdOrderRef.current = newOrder;
 
       // --- FIREBASE INTEGRATION ---
       try {
           await createOrder(newOrder); // Save to cloud
+
+          // --- TELEGRAM NOTIFICATION ---
+          if (settings.telegramBotToken && settings.telegramChatId) {
+             const message = `
+<b>📦 新訂單通知！</b>
+
+<b>單號：</b> ${newOrderId}
+<b>商品：</b> ${product.title}
+<b>金額：</b> $${product.price}
+<b>顧客：</b> ${shipping.name}
+<b>電話：</b> ${shipping.phone}
+<b>狀態：</b> ${initialStatus}
+<b>配送：</b> ${isDelivery ? '黑貓宅配' : '超商取貨'}
+<b>地址/門市：</b> ${fullAddress}
+             `;
+             await sendTelegramNotification(settings.telegramBotToken, settings.telegramChatId, message);
+          }
       } catch (e) {
           console.error("Failed to save order to cloud", e);
-          // We continue to show success, but in a real app you might want to show an error
       }
 
       setStep(3); 
@@ -333,44 +415,178 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                     />
                  </div>
                  
-                 <div className="space-y-1.5">
-                    <div className="flex justify-between">
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">手機號碼</label>
-                        {touched.phone && !isPhoneValid && <span className="text-xs text-red-500 flex items-center gap-1"><Icons.Alert size={10}/> 格式錯誤 (09xx...)</span>}
-                    </div>
-                    <input 
-                        type="tel" 
-                        value={shipping.phone}
-                        onChange={(e) => setShipping({...shipping, phone: e.target.value})}
-                        onBlur={() => handleBlur('phone')}
-                        placeholder="09xx-xxx-xxx"
-                        maxLength={10}
-                        className={`w-full px-4 py-3 bg-white dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 transition-all shadow-sm ${
-                            touched.phone && !isPhoneValid
-                            ? 'border-red-400 ring-red-100 dark:ring-red-900/30 text-red-900'
-                            : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500 text-slate-900 dark:text-white'
-                        }`}
-                    />
-                 </div>
+                 {/* Phone Number Logic */}
+                 {isDelivery ? (
+                     <div className="grid grid-cols-2 gap-4">
+                         <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                            <div className="flex justify-between">
+                                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">手機號碼 1 (必填)</label>
+                                {touched.phone && !isPhoneValid && <span className="text-xs text-red-500 flex items-center gap-1"><Icons.Alert size={10}/> 格式錯誤</span>}
+                            </div>
+                            <input 
+                                type="tel" 
+                                value={shipping.phone}
+                                onChange={(e) => setShipping({...shipping, phone: e.target.value})}
+                                onBlur={() => handleBlur('phone')}
+                                placeholder="09xx-xxx-xxx"
+                                maxLength={10}
+                                className={`w-full px-4 py-3 bg-white dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 transition-all shadow-sm ${
+                                    touched.phone && !isPhoneValid
+                                    ? 'border-red-400 ring-red-100 dark:ring-red-900/30 text-red-900'
+                                    : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500 text-slate-900 dark:text-white'
+                                }`}
+                            />
+                         </div>
+                         <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">家電或手機 2 (選填)</label>
+                            <input 
+                                type="tel" 
+                                value={shipping.alternativePhone}
+                                onChange={(e) => setShipping({...shipping, alternativePhone: e.target.value})}
+                                placeholder="備用聯絡電話"
+                                className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white shadow-sm"
+                            />
+                         </div>
+                         <div className="col-span-2 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                             <Icons.Info size={12} /> 請至少填寫一組有效的手機號碼以便接收物流通知。
+                         </div>
+                     </div>
+                 ) : (
+                     <div className="space-y-1.5">
+                        <div className="flex justify-between">
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">手機號碼</label>
+                            {touched.phone && !isPhoneValid && <span className="text-xs text-red-500 flex items-center gap-1"><Icons.Alert size={10}/> 格式錯誤 (09xx...)</span>}
+                        </div>
+                        <input 
+                            type="tel" 
+                            value={shipping.phone}
+                            onChange={(e) => setShipping({...shipping, phone: e.target.value})}
+                            onBlur={() => handleBlur('phone')}
+                            placeholder="09xx-xxx-xxx"
+                            maxLength={10}
+                            className={`w-full px-4 py-3 bg-white dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 transition-all shadow-sm ${
+                                touched.phone && !isPhoneValid
+                                ? 'border-red-400 ring-red-100 dark:ring-red-900/30 text-red-900'
+                                : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500 text-slate-900 dark:text-white'
+                            }`}
+                        />
+                     </div>
+                 )}
             </div>
         </div>
 
-        {/* Store Selection */}
+        {/* Store Selection OR Delivery Address */}
         <div className="space-y-4">
             <div className="flex justify-between items-center">
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
-                    選擇冷凍取貨門市
+                    {isDelivery ? '宅配資訊' : '選擇冷凍取貨門市'}
                 </h4>
-                {touched.store && !isStoreSelected && (
+                {!isDelivery && touched.store && !isStoreSelected && (
                     <span className="text-xs text-red-500 font-bold flex items-center gap-1 animate-pulse">
                         <Icons.Alert size={12}/> 請點擊選擇
                     </span>
                 )}
+                {isDelivery && touched.address && !isAddressValid && (
+                     <span className="text-xs text-red-500 font-bold flex items-center gap-1 animate-pulse">
+                        <Icons.Alert size={12}/> 請完整填寫地址
+                    </span>
+                )}
             </div>
             
-            {settings.enableStoreIntegration ? (
-                // Active: Integrated Map Selection
+            {isDelivery ? (
+                // --- Delivery Form ---
+                <div className="space-y-4 animate-fade-in">
+                    {/* Black Cat Info */}
+                    <div className="p-4 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl shadow-sm relative overflow-hidden border border-slate-200 dark:border-slate-700">
+                        <div className="relative z-10 flex gap-3">
+                             <div className="w-10 h-10 bg-[#FEC401] text-black rounded-lg flex items-center justify-center font-bold flex-shrink-0">
+                                 <Icons.Truck size={24} />
+                             </div>
+                             <div>
+                                 <h5 className="font-bold text-slate-900 dark:text-[#FEC401] text-sm">黑貓宅急便 - 低溫冷凍宅配</h5>
+                                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                                     全程低溫-15度C 以下配送，確保海鮮新鮮度不流失。
+                                 </p>
+                             </div>
+                        </div>
+                        {/* Background Decoration */}
+                        <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-[#FEC401]/10 rounded-full blur-xl"></div>
+                    </div>
+
+                    {/* Address Fields */}
+                    <div className="space-y-3">
+                         <div className="flex gap-3">
+                             <div className="w-1/3">
+                                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 block">縣市</label>
+                                <div className="relative">
+                                    <select 
+                                        value={shipping.city}
+                                        onChange={(e) => setShipping({...shipping, city: e.target.value})}
+                                        className="w-full appearance-none px-3 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white text-sm"
+                                    >
+                                        {Object.keys(TAIWAN_AREAS).map(city => (
+                                            <option key={city} value={city}>{city}</option>
+                                        ))}
+                                    </select>
+                                    <Icons.ArrowRight className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-slate-400 pointer-events-none" size={12} />
+                                </div>
+                             </div>
+                             <div className="w-2/3">
+                                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 block">鄉鎮市區</label>
+                                <div className="relative">
+                                    <select 
+                                        value={shipping.district}
+                                        onChange={(e) => setShipping({...shipping, district: e.target.value})}
+                                        className="w-full appearance-none px-3 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white text-sm"
+                                    >
+                                        {shipping.city && TAIWAN_AREAS[shipping.city]?.map(area => (
+                                            <option key={area} value={area}>{area}</option>
+                                        ))}
+                                    </select>
+                                    <Icons.ArrowRight className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-slate-400 pointer-events-none" size={12} />
+                                </div>
+                             </div>
+                         </div>
+                         <div>
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 block">詳細地址 (街道、巷弄、門牌)</label>
+                            <input 
+                                type="text"
+                                value={shipping.address}
+                                onChange={(e) => setShipping({...shipping, address: e.target.value})}
+                                onBlur={() => handleBlur('address')}
+                                placeholder="請輸入詳細地址"
+                                className={`w-full px-4 py-3 bg-white dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 transition-all shadow-sm ${
+                                    touched.address && !isAddressValid 
+                                    ? 'border-red-400 ring-red-100 dark:ring-red-900/30 text-red-900' 
+                                    : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500 text-slate-900 dark:text-white'
+                                }`}
+                            />
+                         </div>
+                    </div>
+
+                    {/* Time Slot */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400">希望送達時段</label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {Object.values(DeliveryTimeSlot).map((slot) => (
+                                <button
+                                    key={slot}
+                                    onClick={() => setShipping({...shipping, timeSlot: slot})}
+                                    className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                                        shipping.timeSlot === slot 
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200 dark:shadow-blue-900/20' 
+                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    }`}
+                                >
+                                    {slot}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            ) : settings.enableStoreIntegration ? (
+                // --- Store Selection (Integrated) ---
                 <>
                     <div className="grid grid-cols-2 gap-4">
                         <button
@@ -426,7 +642,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                     )}
                 </>
             ) : (
-                // Inactive: Card with Link + Manual Input
+                // --- Store Selection (Manual) ---
                 <div className="space-y-4">
                     <div className="p-4 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-xl">
                          <div className="flex items-start gap-3">
@@ -466,6 +682,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
 
   const renderStep2 = () => (
     <div className="space-y-6 animate-fade-in text-left">
+        {/* ... existing code ... */}
         <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
             訂單明細與付款
@@ -496,6 +713,24 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                 <span className="text-slate-900 dark:text-white font-bold">應付金額</span>
                 <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">${product.price}</span>
             </div>
+        </div>
+
+        {/* Shipping Summary Review */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 rounded-xl">
+             <h5 className="text-xs font-bold text-slate-500 mb-2">配送資訊確認</h5>
+             <div className="space-y-1 text-sm">
+                 <p className="font-bold text-slate-900 dark:text-white">{shipping.name} <span className="font-normal text-slate-500 ml-1">{shipping.phone}</span></p>
+                 {isDelivery ? (
+                     <>
+                        <p className="text-slate-700 dark:text-slate-300">{shipping.city}{shipping.district}{shipping.address}</p>
+                        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                            <Icons.Truck size={12} /> 希望時段：{shipping.timeSlot}
+                        </p>
+                     </>
+                 ) : (
+                     <p className="text-slate-700 dark:text-slate-300">{shipping.storeName}</p>
+                 )}
+             </div>
         </div>
 
         <div className="space-y-3">
@@ -592,6 +827,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
   );
 
   const renderStep3 = () => {
+    // ... existing code ...
     const handleShareOrderId = async () => {
          // Updated share text with emojis and specific instructions
          const shareText = `【海鮮小劉】🎉 已收到您的訂單！\n\n訂單編號：${orderId}\n\n⚠️ 麻煩於 2 日內完成匯款，並回傳「帳號末五碼」至官方 LINE 以利對帳。\n🚚 訂單將於款項確認後的 3-5 個工作日出貨。\n\n🔍 訂單查詢：${window.location.origin}`;
@@ -750,7 +986,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                 {step === 1 && !isStep1Valid && touched.name && (
                     <div className="mb-3 flex items-center justify-center gap-2 text-red-500 text-xs font-medium animate-pulse">
                         <Icons.Alert size={12} />
-                        <span>請填寫完整收件資訊</span>
+                        <span>請填寫完整配送資訊</span>
                     </div>
                 )}
 
