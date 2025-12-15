@@ -85,6 +85,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
   const [step, setStep] = useState<number>(1);
   const [isSimulatingRedirect, setIsSimulatingRedirect] = useState(false);
   const [redirectTarget, setRedirectTarget] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false); // New: 防止重複提交
   
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [mapStoreType, setMapStoreType] = useState<StoreType | null>(null);
@@ -193,6 +194,8 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
         if (!isStep1Valid) return;
         setStep(2);
     } else if (step === 2) {
+        if (isSubmitting) return; // Prevent double click
+
         // Step 2 -> Step 3: Payment & Finalize
         if (settings.enableOnlinePayment) {
             setRedirectTarget('PAYMENT');
@@ -208,6 +211,9 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
   };
 
   const finalizeOrder = async () => {
+      if (isSubmitting) return; // Double check
+      setIsSubmitting(true);
+
       // New Order ID Format: YYMMDD-XXX
       const dateObj = new Date();
       const yy = dateObj.getFullYear().toString().slice(-2);
@@ -223,10 +229,15 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
       // Determine initial status based on payment method
       const initialStatus = settings.enableOnlinePayment ? '商品處理中' : '待匯款';
 
-      // Construct Address String
-      const fullAddress = isDelivery 
-         ? `${shipping.city}${shipping.district}${shipping.address}`
-         : `${shipping.storeName} (${shipping.storeType === StoreType.MANUAL_INPUT ? '手動輸入' : shipping.storeType})`;
+      // Construct Address String safely
+      let fullAddress = '';
+      if (isDelivery) {
+          fullAddress = `${shipping.city}${shipping.district}${shipping.address}`;
+      } else {
+          // Fallback for store type if null (Manual Input case)
+          const typeStr = shipping.storeType === StoreType.MANUAL_INPUT ? '手動輸入' : (shipping.storeType || '門市取貨');
+          fullAddress = `${shipping.storeName} (${typeStr})`;
+      }
 
       const newOrder: Order = {
           id: newOrderId,
@@ -240,16 +251,23 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
           // Delivery Details
           shippingType: isDelivery ? 'delivery' : 'store',
           shippingAddress: fullAddress + (isDelivery && shipping.alternativePhone ? ` (備用: ${shipping.alternativePhone})` : ''),
-          deliveryTimeSlot: isDelivery ? shipping.timeSlot : undefined
+          // FIX: Firestore 不支援 undefined，如果是超取，就不要傳 deliveryTimeSlot 這個欄位
+          ...(isDelivery ? { deliveryTimeSlot: shipping.timeSlot } : {})
       };
       createdOrderRef.current = newOrder;
 
-      // --- FIREBASE INTEGRATION ---
+      // 1. Try to save to Cloud (Firebase)
       try {
-          await createOrder(newOrder); // Save to cloud
+          await createOrder(newOrder); 
+      } catch (e) {
+          console.error("Failed to save order to cloud", e);
+          // Don't block the UI, user can still see the success screen
+      }
 
-          // --- TELEGRAM NOTIFICATION ---
-          if (settings.telegramBotToken && settings.telegramChatId) {
+      // 2. Try to send Telegram Notification (Independent of Cloud Save)
+      // This ensures even if Firebase rules fail, the admin gets a message
+      if (settings.telegramBotToken && settings.telegramChatId) {
+         try {
              const message = `
 <b>📦 新訂單通知！</b>
 
@@ -263,12 +281,13 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
 <b>地址/門市：</b> ${fullAddress}
              `;
              await sendTelegramNotification(settings.telegramBotToken, settings.telegramChatId, message);
-          }
-      } catch (e) {
-          console.error("Failed to save order to cloud", e);
+         } catch (e) {
+             console.error("Failed to send Telegram", e);
+         }
       }
 
       setStep(3); 
+      setIsSubmitting(false); // Release lock (though step 3 UI doesn't allow resubmit)
   };
 
   const handleCopy = (text: string) => {
@@ -668,7 +687,11 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                         <input 
                             type="text" 
                             value={shipping.storeName}
-                            onChange={(e) => setShipping({...shipping, storeName: e.target.value})}
+                            onChange={(e) => setShipping({
+                                ...shipping, 
+                                storeName: e.target.value,
+                                storeType: StoreType.MANUAL_INPUT // Explicitly set type on manual input
+                            })}
                             onBlur={() => handleBlur('store')}
                             placeholder="例如：永吉門市（店號：252975）"
                             className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white shadow-sm"
@@ -715,21 +738,41 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
             </div>
         </div>
 
-        {/* Shipping Summary Review */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 rounded-xl">
-             <h5 className="text-xs font-bold text-slate-500 mb-2">配送資訊確認</h5>
-             <div className="space-y-1 text-sm">
-                 <p className="font-bold text-slate-900 dark:text-white">{shipping.name} <span className="font-normal text-slate-500 ml-1">{shipping.phone}</span></p>
-                 {isDelivery ? (
-                     <>
-                        <p className="text-slate-700 dark:text-slate-300">{shipping.city}{shipping.district}{shipping.address}</p>
-                        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                            <Icons.Truck size={12} /> 希望時段：{shipping.timeSlot}
-                        </p>
-                     </>
-                 ) : (
-                     <p className="text-slate-700 dark:text-slate-300">{shipping.storeName}</p>
-                 )}
+        {/* Updated Shipping Summary Review - Compact & Editable */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 rounded-xl relative">
+             <div className="flex justify-between items-center mb-2">
+                 <h5 className="text-xs font-bold text-slate-500">配送資訊確認</h5>
+                 <button 
+                    onClick={() => !isSubmitting && setStep(1)}
+                    disabled={isSubmitting}
+                    className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded border border-blue-100 dark:border-blue-900/30 disabled:opacity-50"
+                 >
+                    修改
+                 </button>
+             </div>
+             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+                 <span className="text-slate-400 text-xs font-medium self-center">收件資訊</span>
+                 <p className="font-bold text-slate-900 dark:text-white truncate">
+                    {shipping.name} <span className="font-normal text-slate-500 ml-1">{shipping.phone}</span>
+                 </p>
+                 
+                 <span className="text-slate-400 text-xs font-medium self-start mt-0.5">
+                    {isDelivery ? '宅配地址' : '取貨門市'}
+                 </span>
+                 <div>
+                    {isDelivery ? (
+                         <>
+                            <p className="text-slate-700 dark:text-slate-300 leading-tight">
+                                {shipping.city}{shipping.district}{shipping.address}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                                <Icons.Truck size={10} /> 時段：{shipping.timeSlot}
+                            </p>
+                         </>
+                     ) : (
+                         <p className="text-slate-700 dark:text-slate-300 leading-tight">{shipping.storeName}</p>
+                     )}
+                 </div>
              </div>
         </div>
 
@@ -741,6 +784,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                  <>
                     <button
                         onClick={() => setPaymentMethod(PaymentMethod.APPLE_PAY)}
+                        disabled={isSubmitting}
                         className={`w-full p-4 rounded-xl border-2 flex items-center justify-between transition-all ${
                             paymentMethod === PaymentMethod.APPLE_PAY
                             ? 'border-slate-900 dark:border-slate-400 bg-slate-50 dark:bg-slate-800' 
@@ -757,6 +801,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
 
                     <button
                         onClick={() => setPaymentMethod(PaymentMethod.LINE_PAY)}
+                        disabled={isSubmitting}
                         className={`w-full p-4 rounded-xl border-2 flex items-center justify-between transition-all ${
                             paymentMethod === PaymentMethod.LINE_PAY
                             ? 'border-[#00C300] bg-green-50 dark:bg-green-900/10' 
@@ -888,13 +933,6 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                 >
                     <Icons.Copy size={18} />
                 </button>
-                <button 
-                    onClick={handleShareOrderId}
-                    className="p-2 bg-white dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors shadow-sm border border-slate-200 dark:border-slate-600"
-                    title="分享單號 (LINE)"
-                >
-                    <Icons.Share size={18} />
-                </button>
             </div>
          </div>
 
@@ -909,25 +947,25 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
                 <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center">
                     <span className="text-[#00C300] font-bold text-xs italic pr-0.5">L</span>
                 </div>
-                加入海鮮小劉 LINE 官方帳號
+                加入官方 LINE 帳號
              </a>
 
-             {/* 2. Share Website (Secondary) */}
+             {/* 2. Share Order Info (Secondary) - Moved from Icon to Button */}
+             <button 
+                onClick={handleShareOrderId}
+                className="w-full bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+             >
+                <Icons.Share size={18} />
+                轉傳我的訂單資訊
+             </button>
+
+             {/* 3. Share Website (Tertiary) */}
              <button 
                 onClick={handleShareWebsite}
                 className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold py-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
              >
-                <Icons.Share size={18} />
-                分享給愛吃海鮮的朋友
-             </button>
-
-             {/* 3. Check Order (Secondary) */}
-             <button 
-                onClick={handleCompleteFlow} 
-                className="w-full bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold py-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-             >
-                <Icons.Order size={18} />
-                前往訂單查詢
+                <Icons.Gift size={18} />
+                推薦海鮮小劉官網
              </button>
          </div>
     </div>
@@ -992,15 +1030,21 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({ product, onClose, onComplet
 
                 <button
                     onClick={handleNext}
-                    disabled={step === 1 && !isStep1Valid}
+                    disabled={(step === 1 && !isStep1Valid) || isSubmitting}
                     className={`w-full font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
-                        (step === 1 && !isStep1Valid)
+                        (step === 1 && !isStep1Valid) || isSubmitting
                         ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none' 
                         : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 dark:shadow-blue-900/30 active:scale-[0.98]'
                     }`}
                 >
-                    {step === 1 ? '下一步' : settings.enableOnlinePayment ? `確認支付 $${product.price}` : `送出訂單 $${product.price}`}
-                    {step === 1 && <Icons.Next size={20} />}
+                    {isSubmitting ? (
+                        <Icons.Loading className="animate-spin" size={20} />
+                    ) : (
+                        <>
+                            {step === 1 ? '下一步' : settings.enableOnlinePayment ? `確認支付 $${product.price}` : `送出訂單 $${product.price}`}
+                            {step === 1 && <Icons.Next size={20} />}
+                        </>
+                    )}
                 </button>
             </div>
         )}
