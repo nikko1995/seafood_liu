@@ -67,35 +67,4 @@ export const PRODUCTS: Product[] = [
   }
 ];
 
-export const MOCK_ORDERS: Order[] = [
-  {
-    id: 'ORD-20231024-001',
-    customerName: '王小明',
-    customerPhone: '0912345678',
-    date: '2023-10-24 14:30',
-    lastUpdated: '2023-10-25 10:00',
-    total: 1099,
-    status: '訂單完成',
-    items: ['小資減脂海鮮組']
-  },
-  {
-    id: 'ORD-20240115-088',
-    customerName: '李美華',
-    customerPhone: '0987654321',
-    date: '2024-01-15 09:15',
-    lastUpdated: '2024-01-15 09:15',
-    total: 3999,
-    status: '商品處理中',
-    items: ['過年澎湃團聚組']
-  },
-  {
-    id: 'ORD-20240210-101',
-    customerName: '陳大文',
-    customerPhone: '0922333444',
-    date: '2024-02-10 18:20',
-    lastUpdated: '2024-02-10 18:20',
-    total: 1999,
-    status: '待匯款',
-    items: ['輕盈好食海鮮組']
-  }
-];
+export const MOCK_ORDERS: Order[] = [];
