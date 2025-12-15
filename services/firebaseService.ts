@@ -104,6 +104,20 @@ export const updateOrderStatus = async (orderId: string, status: Order['status']
   }
 };
 
+// New: Clear all orders for testing/reset
+export const deleteAllOrders = async (): Promise<void> => {
+  if (!db) return;
+  try {
+    const q = query(collection(db, ORDERS_COL));
+    const snapshot = await getDocs(q);
+    const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+    await Promise.all(deletePromises);
+  } catch (error) {
+    console.error("Error deleting all orders:", error);
+    throw error;
+  }
+};
+
 // --- Settings ---
 
 export const fetchSettings = async (): Promise<SiteSettings | null> => {
