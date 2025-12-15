@@ -30,11 +30,23 @@ export enum StoreType {
   MANUAL_INPUT = '自行輸入'
 }
 
+export enum DeliveryTimeSlot {
+  UNSPECIFIED = '不指定',
+  MORNING = '13:00 前',
+  AFTERNOON = '14:00 ~ 18:00'
+}
+
 export interface ShippingInfo {
   name: string;
   phone: string;
+  alternativePhone?: string; // New for delivery
   storeType: StoreType | null;
   storeName: string;
+  // New for delivery
+  city?: string;
+  district?: string;
+  address?: string;
+  timeSlot?: DeliveryTimeSlot;
 }
 
 export interface Order {
@@ -44,8 +56,12 @@ export interface Order {
   date: string;
   lastUpdated?: string;
   total: number;
-  status: '待匯款' | '商品處理中' | '已出貨' | '訂單完成' | '匯款逾期' | '訂單取消'; // Updated statuses
+  status: '待匯款' | '商品處理中' | '已出貨' | '訂單完成' | '匯款逾期' | '訂單取消';
   items: string[];
+  // New fields to store delivery context
+  shippingType?: 'store' | 'delivery';
+  shippingAddress?: string; // Stores full address or store info
+  deliveryTimeSlot?: string;
 }
 
 export interface BrandFeature {
@@ -69,6 +85,10 @@ export interface SiteSettings {
   bankAccount: string;
   bankAccountName: string;
   lastUpdated?: string;
+
+  // Telegram Notification (New)
+  telegramBotToken?: string;
+  telegramChatId?: string;
 
   // Website Identity
   websiteLogo?: string;
