@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { Product, Order, SiteSettings } from '../types';
 import { Icons } from './Icons';
-import { saveProduct, removeProduct, updateOrderStatus, saveSettings } from '../services/firebaseService';
+import { saveProduct, removeProduct, updateOrderStatus, saveSettings, deleteAllOrders } from '../services/firebaseService';
+import { sendTelegramNotification } from '../services/telegramService';
 
 interface AdminPanelProps {
   products: Product[];
@@ -30,13 +32,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [sortConfig, setSortConfig] = useState<{ key: 'customer' | 'date' | 'id', direction: 'asc' | 'desc' } | null>(null);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
   const [orderDateRange, setOrderDateRange] = useState({ start: '', end: '' });
+  const [filterShippingType, setFilterShippingType] = useState<'all' | 'store' | 'delivery'>('all');
   const [orderPage, setOrderPage] = useState(1);
   const ITEMS_PER_PAGE = 15;
 
   // Reset page when filters change
   useEffect(() => {
     setOrderPage(1);
-  }, [orderSearchTerm, orderDateRange]);
+  }, [orderSearchTerm, orderDateRange, filterShippingType]);
 
   // Lock body scroll when edit modal is open
   useEffect(() => {
@@ -121,7 +124,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   });
               }
           };
-          reader.readAsDataURL(file);
+          // 修正：強制轉型為 Blob 以符合 TypeScript 要求
+          reader.readAsDataURL(file as Blob);
       });
   };
 
@@ -150,6 +154,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     const timestamp = new Date().toLocaleString('zh-TW', { hour12: false });
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus, lastUpdated: timestamp } : o));
     try { await updateOrderStatus(orderId, newStatus); } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteAllOrders = async () => {
+    if (confirm('⚠️ 嚴重警告：確定要刪除「所有」訂單資料嗎？\n\n此動作將清空資料庫中的所有訂單，且無法復原！')) {
+        setIsSaving(true);
+        try {
+            await deleteAllOrders();
+            setOrders([]);
+            alert('所有訂單已成功清除。');
+        } catch(e) {
+            console.error(e);
+            alert('清除失敗，請檢查網路或權限。');
+        } finally {
+            setIsSaving(false);
+        }
+    }
   };
 
   const handleSort = (key: 'customer' | 'date' | 'id') => {
@@ -183,7 +203,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           result = result.filter(o => o.date <= orderDateRange.end + ' 23:59:59');
       }
 
-      // 3. Sort
+      // 3. Shipping Type Filter (New)
+      if (filterShippingType !== 'all') {
+          result = result.filter(o => o.shippingType === filterShippingType);
+      }
+
+      // 4. Sort
       if (sortConfig) {
           result.sort((a, b) => {
               let aVal = '';
@@ -214,6 +239,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       const updated = { ...settings, ...newSettings, lastUpdated: timestamp };
       setSettings(updated);
       saveSettings(updated).catch(e => console.error("Settings save failed", e));
+  };
+
+  const handleTestTelegram = async () => {
+      if (!settings.telegramBotToken || !settings.telegramChatId) {
+          alert('請先儲存 Token 與 Chat ID');
+          return;
+      }
+      const success = await sendTelegramNotification(settings.telegramBotToken, settings.telegramChatId, '🎉 測試訊息：您的 Telegram 通知設定成功！');
+      if (success) alert('測試訊息發送成功！請檢查您的 Telegram。');
+      else alert('發送失敗，請檢查 Token 與 Chat ID 是否正確。');
   };
 
   const inputClass = "w-full p-2.5 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all";
@@ -275,6 +310,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // --- Renderers ---
+  // ... (Previous Renderers for Products, Brand, Appearance)
 
   const renderProductsTab = () => (
     <div className="space-y-4 animate-fade-in">
@@ -311,6 +347,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   );
 
   const renderBrandTab = () => (
+    // ... existing Brand Tab content ...
     <div className="space-y-6 animate-fade-in w-full">
          <div className="flex items-center gap-2 mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
              <Icons.Brand className="text-orange-600" size={24} />
@@ -460,11 +497,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const renderOrdersTab = () => (
     <div className="space-y-4 animate-fade-in">
-      <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-4">訂單管理</h3>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+          <h3 className="text-xl font-bold text-slate-800 dark:text-white">訂單管理</h3>
+          
+          {/* New Clear Orders Button */}
+          <button
+              onClick={handleDeleteAllOrders}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-red-700 shadow-sm text-sm font-bold"
+          >
+              <Icons.Trash size={16} /> 清除所有訂單
+          </button>
+      </div>
 
       {/* Search & Filter Toolbar */}
       <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-12 gap-4 items-end mb-4">
-          <div className="md:col-span-5 space-y-1">
+          <div className="md:col-span-3 space-y-1">
               <label className="text-xs font-bold text-slate-500">搜尋 (訂單編號 / 客戶 / 電話)</label>
               <div className="relative">
                   <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -477,7 +524,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   />
               </div>
           </div>
+          
           <div className="md:col-span-3 space-y-1">
+              <label className="text-xs font-bold text-slate-500">配送方式</label>
+              <div className="relative">
+                  <select
+                      value={filterShippingType}
+                      onChange={(e) => setFilterShippingType(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600 dark:text-slate-300"
+                  >
+                      <option value="all">全部方式</option>
+                      <option value="store">超商取貨</option>
+                      <option value="delivery">黑貓宅配</option>
+                  </select>
+              </div>
+          </div>
+
+          <div className="md:col-span-2 space-y-1">
                <label className="text-xs font-bold text-slate-500">開始日期</label>
                <input 
                   type="date" 
@@ -486,7 +549,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600 dark:text-slate-300"
                />
           </div>
-          <div className="md:col-span-3 space-y-1">
+          <div className="md:col-span-2 space-y-1">
                <label className="text-xs font-bold text-slate-500">結束日期</label>
                <input 
                   type="date" 
@@ -495,17 +558,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600 dark:text-slate-300"
                />
           </div>
-          <div className="md:col-span-1 flex justify-end">
-              {(orderSearchTerm || orderDateRange.start || orderDateRange.end) && (
+          <div className="md:col-span-2 flex justify-end">
+              {(orderSearchTerm || orderDateRange.start || orderDateRange.end || filterShippingType !== 'all') && (
                   <button 
                       onClick={() => {
                           setOrderSearchTerm('');
                           setOrderDateRange({ start: '', end: '' });
+                          setFilterShippingType('all');
                       }}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 text-sm font-bold"
                       title="清除篩選"
                   >
-                      <Icons.Trash size={18} />
+                      <Icons.Trash size={16} /> 重設
                   </button>
               )}
           </div>
@@ -518,6 +582,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     <th className="px-4 py-3 cursor-pointer hover:text-blue-600" onClick={() => handleSort('id')}>
                         訂單編號 {sortConfig?.key === 'id' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
+                    <th className="px-4 py-3 whitespace-nowrap">配送方式</th>
                     <th className="px-4 py-3 whitespace-nowrap">建立時間</th>
                     <th className="px-4 py-3 cursor-pointer hover:text-blue-600" onClick={() => handleSort('customer')}>
                         客戶 {sortConfig?.key === 'customer' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
@@ -531,6 +596,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 {paginatedOrders.length > 0 ? paginatedOrders.map(order => (
                     <tr key={order.id} className="bg-white border-b dark:bg-slate-800 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
                         <td className="px-4 py-3 font-mono">{order.id}</td>
+                        <td className="px-4 py-3 text-xs">
+                             <span className={`px-2 py-1 rounded border text-[10px] font-bold ${
+                                 order.shippingType === 'delivery' 
+                                 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
+                                 : 'bg-blue-50 text-blue-700 border-blue-200'
+                             }`}>
+                                 {order.shippingType === 'delivery' ? '宅配' : '超取'}
+                             </span>
+                        </td>
                         <td className="px-4 py-3 text-xs">{order.date}</td>
                         <td className="px-4 py-3">
                             <div className="font-bold text-slate-800 dark:text-white">{order.customerName}</div>
@@ -564,7 +638,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </tr>
                 )) : (
                     <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
+                        <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
                             沒有找到符合條件的訂單
                         </td>
                     </tr>
@@ -626,15 +700,75 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   );
 
   const renderSettingsTab = () => (
+    // ... existing Settings Tab content ...
     <div className="space-y-6 animate-fade-in w-full">
       <div className="flex items-center gap-2 mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <Icons.Settings className="text-slate-600 dark:text-slate-400" size={24} />
         <div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white">系統設定 (物流/金流)</h3>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white">系統設定 (物流/金流/通知)</h3>
             {settings.lastUpdated && (
                 <span className="text-xs text-slate-400 font-normal">上次更新：{settings.lastUpdated}</span>
             )}
         </div>
+      </div>
+
+      {/* Telegram Notification Settings */}
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 relative overflow-hidden">
+         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+             <div className="w-32 h-32 bg-blue-400 rounded-full blur-3xl"></div>
+         </div>
+         <div className="flex items-center justify-between mb-4 relative z-10">
+             <div className="flex items-center gap-2">
+                 <div className="bg-blue-500 text-white p-1.5 rounded-lg">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2L2 10.5L10.5 12.5L20 22L12.5 13.5L21.5 2Z"></path></svg>
+                 </div>
+                 <h4 className="font-bold text-slate-900 dark:text-white">Telegram 訂單通知 (替代 Line Notify)</h4>
+             </div>
+         </div>
+
+         <div className="space-y-4 relative z-10">
+             <div className="p-4 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-lg text-sm text-blue-800 dark:text-blue-200">
+                 <p className="font-bold mb-1">💡 如何設定？</p>
+                 <ol className="list-decimal pl-4 space-y-1 opacity-90 text-xs">
+                     <li>在 Telegram 搜尋 <b>@BotFather</b>，輸入 <code>/newbot</code> 建立機器人，取得 <b>Token</b>。</li>
+                     <li>在 Telegram 搜尋 <b>@userinfobot</b> (或其他 ID Bot)，取得您的 <b>Chat ID</b>。</li>
+                     <li><b>重要：</b>請先用您的 Telegram 帳號傳送隨意訊息給剛建立的機器人，以開通權限。</li>
+                 </ol>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div className="space-y-1">
+                     <label className="text-xs font-bold text-slate-500">Bot Token</label>
+                     <input 
+                        type="text"
+                        value={settings.telegramBotToken || ''}
+                        onChange={(e) => updateSettingsLocal({ telegramBotToken: e.target.value })}
+                        className={`${inputClass} font-mono`}
+                        placeholder="例如：123456789:ABCdefGHIjklMNOpqrs..."
+                     />
+                 </div>
+                 <div className="space-y-1">
+                     <label className="text-xs font-bold text-slate-500">Chat ID</label>
+                     <input 
+                        type="text"
+                        value={settings.telegramChatId || ''}
+                        onChange={(e) => updateSettingsLocal({ telegramChatId: e.target.value })}
+                        className={`${inputClass} font-mono`}
+                        placeholder="例如：987654321"
+                     />
+                 </div>
+             </div>
+
+             <div className="flex justify-end">
+                 <button 
+                    onClick={handleTestTelegram}
+                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors flex items-center gap-2"
+                 >
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"></path><path d="M22 2L15 22L11 13L2 9L22 2Z"></path></svg>
+                    發送測試訊息
+                 </button>
+             </div>
+         </div>
       </div>
       
       {/* Logistics Settings */}
