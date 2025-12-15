@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Tab, Product, Order, SiteSettings } from './types';
 import { Icons } from './components/Icons';
@@ -47,7 +48,10 @@ const App: React.FC = () => {
         { text: '大溪直送' },
         { text: '品質保證' },
         { text: '低溫宅配' }
-    ]
+    ],
+    // Telegram Defaults
+    telegramBotToken: '',
+    telegramChatId: ''
   });
 
   // --- Initial Data Fetching ---
@@ -233,14 +237,7 @@ const App: React.FC = () => {
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-900 border border-blue-100 dark:border-slate-800 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm relative overflow-hidden">
           <div className="relative z-10">
             <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white mb-2 flex items-center">
-              來自大海的極致鮮甜 
-              <button 
-                onClick={handleSecretEntry}
-                className="text-2xl ml-2 cursor-pointer select-none hover:scale-125 active:scale-95 transition-transform focus:outline-none"
-                title={currentUser ? "進入後台" : "管理員登入"} 
-              >
-                🌊
-              </button>
+              來自大海的極致鮮甜 🌊
             </h2>
             <p className="text-slate-600 dark:text-slate-300 text-sm sm:text-base font-medium">宜蘭大溪漁港直送，鎖住大海最原始的鮮甜！</p>
           </div>
@@ -565,7 +562,7 @@ const App: React.FC = () => {
 
       {/* Footer */}
       <footer className="py-6 text-center text-slate-400 text-xs dark:text-slate-600 pb-24 md:pb-6">
-          <p>© {new Date().getFullYear()} 海鮮小劉 Seafood Liu. All Rights Reserved.</p>
+          <p>© {new Date().getFullYear()} <span onClick={handleSecretEntry} className="hover:text-slate-500 cursor-pointer transition-colors">海鮮小劉</span> Seafood Liu. All Rights Reserved.</p>
       </footer>
 
       <BottomNav currentTab={activeTab} onTabChange={setActiveTab} />
