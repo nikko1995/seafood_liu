@@ -74,6 +74,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleSaveProduct = async () => {
     if (!editingProduct) return;
+
+    // --- 安全檢查：Firestore 文件 1MB 限制 ---
+    // 我們計算所有圖片的字串長度，估算檔案大小
+    const imagesTotalSize = editingProduct.images.reduce((acc, img) => acc + img.length, 0);
+    const estimatedDocSizeKB = Math.round(imagesTotalSize / 1024);
+    
+    if (estimatedDocSizeKB > 900) { // 留一點點餘裕給文字欄位
+        alert(`儲存失敗：產品照片總容量 (${estimatedDocSizeKB}KB) 接近 1MB 限制。請嘗試移除 1-2 張照片。`);
+        return;
+    }
+
     setIsSaving(true);
     try {
         await saveProduct(editingProduct);
@@ -86,8 +97,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         });
         setIsEditModalOpen(false);
         setEditingProduct(null);
-    } catch (e) {
-        alert("儲存失敗，請檢查權限是否正確");
+    } catch (e: any) {
+        console.error("Save error:", e);
+        let errorMsg = "儲存失敗";
+        if (e.message?.includes("exceeds") || e.code === "out-of-range") {
+            errorMsg = "儲存失敗：產品所有照片加起來超過了 1MB 限制，請減少照片數量或重新上傳（系統會自動再壓縮）。";
+        } else if (e.message?.includes("permission-denied")) {
+            errorMsg = "儲存失敗：權限不足。請確認您已登入，且 Firebase Rules 已開啟。";
+        } else {
+            errorMsg = `儲存失敗：${e.message || "未知原因"}`;
+        }
+        alert(errorMsg);
     } finally {
         setIsSaving(false);
     }
@@ -104,6 +124,48 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // --- Image Compression Logic (Aggressive for Firestore 1MB Limit) ---
+  const compressImage = (base64Str: string): Promise<string> => {
+      return new Promise((resolve) => {
+          const img = new Image();
+          img.src = base64Str;
+          img.onload = () => {
+              const canvas = document.createElement('canvas');
+              // 調降至 800px，這是網頁顯示的黃金平衡點
+              const MAX_WIDTH = 800;
+              const MAX_HEIGHT = 800;
+              let width = img.width;
+              let height = img.height;
+
+              if (width > height) {
+                  if (width > MAX_WIDTH) {
+                      height *= MAX_WIDTH / width;
+                      width = MAX_WIDTH;
+                  }
+              } else {
+                  if (height > MAX_HEIGHT) {
+                      width *= MAX_HEIGHT / height;
+                      height = MAX_HEIGHT;
+                  }
+              }
+
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              // 使用高品質插值
+              if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, width, height);
+              }
+              
+              // 壓縮品質調至 0.5 (Base64 會增加 33% 體積，所以 0.5 很安全)
+              // 輸出格式統一為 jpeg 以獲得最小體積
+              resolve(canvas.toDataURL('image/jpeg', 0.5));
+          };
+      });
+  };
+
   // --- Image Handling (Product Modal) ---
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
@@ -113,19 +175,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           alert("最多只能上傳 6 張圖片");
           return;
       }
+      
       const filesToProcess = Array.from(files).slice(0, remainingSlots);
       filesToProcess.forEach(file => {
           const reader = new FileReader();
-          reader.onload = (event) => {
+          reader.onload = async (event) => {
               if (event.target?.result) {
+                  const originalBase64 = event.target.result as string;
+                  // 自動執行極致壓縮
+                  const compressedBase64 = await compressImage(originalBase64);
+                  
                   setEditingProduct(prev => {
                       if (!prev) return null;
-                      return { ...prev, images: [...prev.images, event.target!.result as string] };
+                      return { ...prev, images: [...prev.images, compressedBase64] };
                   });
               }
           };
-          // 修正：強制轉型為 Blob 以符合 TypeScript 要求
-          reader.readAsDataURL(file as Blob);
+          reader.readAsDataURL(file);
       });
   };
 
@@ -180,11 +246,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       setSortConfig({ key, direction });
   };
 
-  // Processed Orders (Filter -> Sort)
   const getProcessedOrders = () => {
       let result = [...orders];
-
-      // 1. Search
       if (orderSearchTerm.trim()) {
           const term = orderSearchTerm.toLowerCase().trim();
           result = result.filter(o => 
@@ -193,22 +256,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               o.customerPhone.includes(term)
           );
       }
-
-      // 2. Date Filter
-      if (orderDateRange.start) {
-          result = result.filter(o => o.date >= orderDateRange.start);
-      }
-      if (orderDateRange.end) {
-          // Add end of day time for inclusive comparison
-          result = result.filter(o => o.date <= orderDateRange.end + ' 23:59:59');
-      }
-
-      // 3. Shipping Type Filter (New)
-      if (filterShippingType !== 'all') {
-          result = result.filter(o => o.shippingType === filterShippingType);
-      }
-
-      // 4. Sort
+      if (orderDateRange.start) result = result.filter(o => o.date >= orderDateRange.start);
+      if (orderDateRange.end) result = result.filter(o => o.date <= orderDateRange.end + ' 23:59:59');
+      if (filterShippingType !== 'all') result = result.filter(o => o.shippingType === filterShippingType);
       if (sortConfig) {
           result.sort((a, b) => {
               let aVal = '';
@@ -216,16 +266,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               if (sortConfig.key === 'customer') { aVal = a.customerName; bVal = b.customerName; }
               else if (sortConfig.key === 'date') { aVal = a.date; bVal = b.date; }
               else { aVal = a.id; bVal = b.id; }
-              
               if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
               if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
               return 0;
           });
       } else {
-          // Default: Newest first
           result.sort((a, b) => b.date.localeCompare(a.date));
       }
-
       return result;
   };
 
@@ -233,7 +280,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const totalPages = Math.ceil(processedOrders.length / ITEMS_PER_PAGE);
   const paginatedOrders = processedOrders.slice((orderPage - 1) * ITEMS_PER_PAGE, orderPage * ITEMS_PER_PAGE);
 
-  // --- Settings Management ---
   const updateSettingsLocal = (newSettings: Partial<SiteSettings>) => {
       const timestamp = new Date().toLocaleString('zh-TW', { hour12: false });
       const updated = { ...settings, ...newSettings, lastUpdated: timestamp };
@@ -253,38 +299,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const inputClass = "w-full p-2.5 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all";
 
-  // --- Compact Image Upload Component (No Preview, Filename only) ---
   const renderImageSetting = (label: string, value: string | undefined, onUpdate: (val: string) => void) => {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            if (file.size > 2 * 1024 * 1024) {
-                 alert("圖片過大，建議 2MB 以下");
-            }
+            if (file.size > 5 * 1024 * 1024) { alert("圖片過大，建議 5MB 以下原始圖，系統會自動壓縮"); return; }
             const reader = new FileReader();
-            reader.onload = (ev) => {
-                 if (ev.target?.result) onUpdate(ev.target.result as string);
+            reader.onload = async (ev) => {
+                 if (ev.target?.result) {
+                     const compressed = await compressImage(ev.target.result as string);
+                     onUpdate(compressed);
+                 }
             };
             reader.readAsDataURL(file);
         }
     };
-
     return (
         <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</label>
             <div className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 rounded-lg">
                 <label className="cursor-pointer bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3 py-2 rounded-md flex items-center gap-2 transition-colors flex-shrink-0">
-                    <Icons.Upload size={14} />
-                    上傳更換
+                    <Icons.Upload size={14} /> 上傳更換
                     <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
                 </label>
-                
                 <div className="flex-1 flex items-center gap-2 overflow-hidden">
                     {value ? (
                         <>
                             <Icons.Check size={14} className="text-green-500 flex-shrink-0" />
                             <span className="text-xs text-slate-600 dark:text-slate-300 truncate font-mono">
-                                {value.startsWith('data:') ? '已上傳圖片 (Base64 Data)' : value}
+                                {value.startsWith('data:') ? '已優化壓縮圖片' : value}
                             </span>
                         </>
                     ) : (
@@ -294,13 +337,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         </>
                     )}
                 </div>
-
                 {value && (
-                    <button 
-                        onClick={() => onUpdate('')}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                        title="移除圖片"
-                    >
+                    <button onClick={() => onUpdate('')} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors">
                         <Icons.Trash size={14} />
                     </button>
                 )}
@@ -308,9 +346,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
     );
   };
-
-  // --- Renderers ---
-  // ... (Previous Renderers for Products, Brand, Appearance)
 
   const renderProductsTab = () => (
     <div className="space-y-4 animate-fade-in">
@@ -347,128 +382,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   );
 
   const renderBrandTab = () => (
-    // ... existing Brand Tab content ...
     <div className="space-y-6 animate-fade-in w-full">
          <div className="flex items-center gap-2 mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
              <Icons.Brand className="text-orange-600" size={24} />
              <h3 className="text-xl font-bold text-slate-900 dark:text-white">品牌介紹設定</h3>
          </div>
-
-         {/* Banner */}
          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
              <h4 className="font-bold text-slate-800 dark:text-white">主視覺 Banner</h4>
-             {renderImageSetting(
-                 "Banner 圖片",
-                 settings.brandBannerImage,
-                 (val) => updateSettingsLocal({ brandBannerImage: val })
-             )}
+             {renderImageSetting("Banner 圖片", settings.brandBannerImage, (val) => updateSettingsLocal({ brandBannerImage: val }))}
              <div className="space-y-1">
                  <label className="text-xs font-bold text-slate-500">Banner 標題文字</label>
-                 <input 
-                    type="text"
-                    value={settings.brandBannerTitle || ''}
-                    onChange={(e) => updateSettingsLocal({ brandBannerTitle: e.target.value })}
-                    className={inputClass}
-                 />
+                 <input type="text" value={settings.brandBannerTitle || ''} onChange={(e) => updateSettingsLocal({ brandBannerTitle: e.target.value })} className={inputClass} />
              </div>
          </div>
-
-         {/* Features */}
          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
              <h4 className="font-bold text-slate-800 dark:text-white">品牌特色區塊</h4>
              {[0, 1].map((index) => (
                  <div key={index} className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-700 space-y-4">
-                     <div className="flex justify-between items-center mb-2">
-                         <span className="text-sm font-bold text-blue-600 dark:text-blue-400">特色 #{index + 1}</span>
-                     </div>
-                     
-                     {/* Row 1: Icon */}
-                     <div>
-                         {renderImageSetting(
-                            "特色圖示 (建議方形小圖)",
-                            settings.brandFeatures?.[index]?.iconUrl,
-                            (val) => {
-                                const newFeatures = [...(settings.brandFeatures || [])];
-                                if (!newFeatures[index]) newFeatures[index] = { title: '', description: '' };
-                                newFeatures[index].iconUrl = val;
-                                updateSettingsLocal({ brandFeatures: newFeatures });
-                            }
-                        )}
-                     </div>
-
-                     {/* Row 2: Title */}
+                     <span className="text-sm font-bold text-blue-600 dark:text-blue-400">特色 #{index + 1}</span>
+                     {renderImageSetting("特色圖示", settings.brandFeatures?.[index]?.iconUrl, (val) => {
+                        const newFeatures = [...(settings.brandFeatures || [])];
+                        if (!newFeatures[index]) newFeatures[index] = { title: '', description: '' };
+                        newFeatures[index].iconUrl = val;
+                        updateSettingsLocal({ brandFeatures: newFeatures });
+                     })}
                      <div className="space-y-1">
                         <label className="text-xs font-bold text-slate-500">標題</label>
-                        <input 
-                            type="text"
-                            placeholder="例如：每日新鮮直送"
-                            value={settings.brandFeatures?.[index]?.title || ''}
-                            onChange={(e) => {
-                                const newFeatures = [...(settings.brandFeatures || [])];
-                                if (!newFeatures[index]) newFeatures[index] = { title: '', description: '' };
-                                newFeatures[index].title = e.target.value;
-                                updateSettingsLocal({ brandFeatures: newFeatures });
-                            }}
-                            className={inputClass}
-                        />
+                        <input type="text" value={settings.brandFeatures?.[index]?.title || ''} onChange={(e) => {
+                            const newFeatures = [...(settings.brandFeatures || [])];
+                            if (!newFeatures[index]) newFeatures[index] = { title: '', description: '' };
+                            newFeatures[index].title = e.target.value;
+                            updateSettingsLocal({ brandFeatures: newFeatures });
+                        }} className={inputClass} />
                      </div>
-
-                     {/* Row 3: Description */}
                      <div className="space-y-1">
                         <label className="text-xs font-bold text-slate-500">內文描述</label>
-                        <textarea 
-                            placeholder="詳細說明..."
-                            value={settings.brandFeatures?.[index]?.description || ''}
-                            onChange={(e) => {
-                                const newFeatures = [...(settings.brandFeatures || [])];
-                                if (!newFeatures[index]) newFeatures[index] = { title: '', description: '' };
-                                newFeatures[index].description = e.target.value;
-                                updateSettingsLocal({ brandFeatures: newFeatures });
-                            }}
-                            className={inputClass}
-                            rows={3}
-                        />
+                        <textarea value={settings.brandFeatures?.[index]?.description || ''} onChange={(e) => {
+                            const newFeatures = [...(settings.brandFeatures || [])];
+                            if (!newFeatures[index]) newFeatures[index] = { title: '', description: '' };
+                            newFeatures[index].description = e.target.value;
+                            updateSettingsLocal({ brandFeatures: newFeatures });
+                        }} className={inputClass} rows={3} />
                      </div>
                  </div>
              ))}
-         </div>
-
-         {/* Footer Icons */}
-         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
-             <h4 className="font-bold text-slate-800 dark:text-white">底部承諾標章</h4>
-             <div className="space-y-3">
-                 {[0, 1, 2].map((index) => (
-                     <div key={index} className="flex flex-col sm:flex-row gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-700 items-start sm:items-end">
-                         <div className="flex-1 w-full sm:w-auto">
-                             {renderImageSetting(
-                                 `標章圖示 #${index+1}`,
-                                 settings.brandFooterItems?.[index]?.iconUrl,
-                                 (val) => {
-                                     const newItems = [...(settings.brandFooterItems || [])];
-                                     if (!newItems[index]) newItems[index] = { text: '' };
-                                     newItems[index].iconUrl = val;
-                                     updateSettingsLocal({ brandFooterItems: newItems });
-                                 }
-                             )}
-                         </div>
-                         <div className="flex-1 w-full sm:w-auto space-y-1">
-                             <label className="text-xs font-bold text-slate-500">標章文字</label>
-                             <input 
-                                type="text"
-                                placeholder="例如：低溫宅配"
-                                value={settings.brandFooterItems?.[index]?.text || ''}
-                                onChange={(e) => {
-                                    const newItems = [...(settings.brandFooterItems || [])];
-                                    if (!newItems[index]) newItems[index] = { text: '' };
-                                    newItems[index].text = e.target.value;
-                                    updateSettingsLocal({ brandFooterItems: newItems });
-                                }}
-                                className={inputClass}
-                             />
-                         </div>
-                     </div>
-                 ))}
-             </div>
          </div>
     </div>
   );
@@ -479,18 +436,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
              <Icons.Image className="text-purple-600" size={24} />
              <h3 className="text-xl font-bold text-slate-900 dark:text-white">網站外觀設定</h3>
          </div>
-
          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-6">
-             {renderImageSetting(
-                 "網站 Logo (建議 40x40 png)",
-                 settings.websiteLogo,
-                 (val) => updateSettingsLocal({ websiteLogo: val })
-             )}
-             {renderImageSetting(
-                 "網站 Favicon (瀏覽器分頁圖示)",
-                 settings.websiteFavicon,
-                 (val) => updateSettingsLocal({ websiteFavicon: val })
-             )}
+             {renderImageSetting("網站 Logo", settings.websiteLogo, (val) => updateSettingsLocal({ websiteLogo: val }))}
+             {renderImageSetting("網站 Favicon", settings.websiteFavicon, (val) => updateSettingsLocal({ websiteFavicon: val }))}
          </div>
     </div>
   );
@@ -499,131 +447,49 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     <div className="space-y-4 animate-fade-in">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
           <h3 className="text-xl font-bold text-slate-800 dark:text-white">訂單管理</h3>
-          
-          {/* New Clear Orders Button */}
-          <button
-              onClick={handleDeleteAllOrders}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-red-700 shadow-sm text-sm font-bold"
-          >
+          <button onClick={handleDeleteAllOrders} className="bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-red-700 shadow-sm text-sm font-bold">
               <Icons.Trash size={16} /> 清除所有訂單
           </button>
       </div>
-
-      {/* Search & Filter Toolbar */}
       <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-12 gap-4 items-end mb-4">
           <div className="md:col-span-3 space-y-1">
-              <label className="text-xs font-bold text-slate-500">搜尋 (訂單編號 / 客戶 / 電話)</label>
+              <label className="text-xs font-bold text-slate-500">搜尋</label>
               <div className="relative">
                   <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                  <input 
-                      type="text" 
-                      placeholder="請輸入關鍵字..." 
-                      value={orderSearchTerm}
-                      onChange={(e) => setOrderSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
-                  />
+                  <input type="text" value={orderSearchTerm} onChange={(e) => setOrderSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
               </div>
           </div>
-          
           <div className="md:col-span-3 space-y-1">
-              <label className="text-xs font-bold text-slate-500">配送方式</label>
-              <div className="relative">
-                  <select
-                      value={filterShippingType}
-                      onChange={(e) => setFilterShippingType(e.target.value as any)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600 dark:text-slate-300"
-                  >
-                      <option value="all">全部方式</option>
-                      <option value="store">超商取貨</option>
-                      <option value="delivery">黑貓宅配</option>
-                  </select>
-              </div>
-          </div>
-
-          <div className="md:col-span-2 space-y-1">
-               <label className="text-xs font-bold text-slate-500">開始日期</label>
-               <input 
-                  type="date" 
-                  value={orderDateRange.start}
-                  onChange={(e) => setOrderDateRange({...orderDateRange, start: e.target.value})}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600 dark:text-slate-300"
-               />
-          </div>
-          <div className="md:col-span-2 space-y-1">
-               <label className="text-xs font-bold text-slate-500">結束日期</label>
-               <input 
-                  type="date" 
-                  value={orderDateRange.end}
-                  onChange={(e) => setOrderDateRange({...orderDateRange, end: e.target.value})}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600 dark:text-slate-300"
-               />
-          </div>
-          <div className="md:col-span-2 flex justify-end">
-              {(orderSearchTerm || orderDateRange.start || orderDateRange.end || filterShippingType !== 'all') && (
-                  <button 
-                      onClick={() => {
-                          setOrderSearchTerm('');
-                          setOrderDateRange({ start: '', end: '' });
-                          setFilterShippingType('all');
-                      }}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 text-sm font-bold"
-                      title="清除篩選"
-                  >
-                      <Icons.Trash size={16} /> 重設
-                  </button>
-              )}
+              <label className="text-xs font-bold text-slate-500">配送</label>
+              <select value={filterShippingType} onChange={(e) => setFilterShippingType(e.target.value as any)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+                  <option value="all">全部</option>
+                  <option value="store">超取</option>
+                  <option value="delivery">宅配</option>
+              </select>
           </div>
       </div>
-
       <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
         <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
             <thead className="text-xs text-slate-700 uppercase bg-slate-100 dark:bg-slate-700 dark:text-slate-400">
                 <tr>
-                    <th className="px-4 py-3 cursor-pointer hover:text-blue-600" onClick={() => handleSort('id')}>
-                        訂單編號 {sortConfig?.key === 'id' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th className="px-4 py-3 whitespace-nowrap">配送方式</th>
-                    <th className="px-4 py-3 whitespace-nowrap">建立時間</th>
-                    <th className="px-4 py-3 cursor-pointer hover:text-blue-600" onClick={() => handleSort('customer')}>
-                        客戶 {sortConfig?.key === 'customer' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
+                    <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('id')}>單號</th>
+                    <th className="px-4 py-3">方式</th>
+                    <th className="px-4 py-3">建立</th>
+                    <th className="px-4 py-3">客戶</th>
                     <th className="px-4 py-3">金額</th>
                     <th className="px-4 py-3">狀態</th>
-                    <th className="px-4 py-3 whitespace-nowrap">最後更新</th>
                 </tr>
             </thead>
             <tbody>
-                {paginatedOrders.length > 0 ? paginatedOrders.map(order => (
-                    <tr key={order.id} className="bg-white border-b dark:bg-slate-800 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                {paginatedOrders.map(order => (
+                    <tr key={order.id} className="bg-white border-b dark:bg-slate-800 dark:border-slate-700 hover:bg-slate-50">
                         <td className="px-4 py-3 font-mono">{order.id}</td>
-                        <td className="px-4 py-3 text-xs">
-                             <span className={`px-2 py-1 rounded border text-[10px] font-bold ${
-                                 order.shippingType === 'delivery' 
-                                 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
-                                 : 'bg-blue-50 text-blue-700 border-blue-200'
-                             }`}>
-                                 {order.shippingType === 'delivery' ? '宅配' : '超取'}
-                             </span>
-                        </td>
+                        <td className="px-4 py-3 text-xs">{order.shippingType === 'delivery' ? '宅配' : '超取'}</td>
                         <td className="px-4 py-3 text-xs">{order.date}</td>
-                        <td className="px-4 py-3">
-                            <div className="font-bold text-slate-800 dark:text-white">{order.customerName}</div>
-                            <div className="text-xs opacity-70">{order.customerPhone}</div>
-                        </td>
+                        <td className="px-4 py-3"><b>{order.customerName}</b><div className="text-xs opacity-70">{order.customerPhone}</div></td>
                         <td className="px-4 py-3">${order.total}</td>
                         <td className="px-4 py-3">
-                            <select 
-                                value={order.status}
-                                onChange={(e) => handleStatusChange(order.id, e.target.value as any)}
-                                className={`bg-transparent border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs font-bold focus:outline-none ${
-                                    order.status === '訂單完成' ? 'text-green-600' : 
-                                    order.status === '已出貨' ? 'text-blue-600' : 
-                                    order.status === '訂單取消' ? 'text-red-600' : 
-                                    order.status === '待匯款' ? 'text-yellow-600' :
-                                    order.status === '匯款逾期' ? 'text-orange-600' :
-                                    'text-purple-600'
-                                }`}
-                            >
+                            <select value={order.status} onChange={(e) => handleStatusChange(order.id, e.target.value as any)} className="bg-transparent border border-slate-300 rounded px-2 py-1 text-xs">
                                 <option value="待匯款">待匯款</option>
                                 <option value="商品處理中">商品處理中</option>
                                 <option value="已出貨">已出貨</option>
@@ -632,304 +498,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                 <option value="訂單取消">訂單取消</option>
                             </select>
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-400">
-                            {order.lastUpdated || '-'}
-                        </td>
                     </tr>
-                )) : (
-                    <tr>
-                        <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
-                            沒有找到符合條件的訂單
-                        </td>
-                    </tr>
-                )}
+                ))}
             </tbody>
         </table>
       </div>
-
-      {/* Pagination */}
-      {processedOrders.length > 0 && (
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-             <span className="text-xs text-slate-500 dark:text-slate-400">
-                 顯示第 {(orderPage - 1) * ITEMS_PER_PAGE + 1} 至 {Math.min(orderPage * ITEMS_PER_PAGE, processedOrders.length)} 筆，共 {processedOrders.length} 筆資料
-             </span>
-             <div className="flex gap-2">
-                 <button 
-                    onClick={() => setOrderPage(p => Math.max(1, p - 1))}
-                    disabled={orderPage === 1}
-                    className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 transition-colors"
-                 >
-                     <Icons.ArrowRight className="rotate-180" size={16} />
-                 </button>
-                 
-                 {/* Page Numbers */}
-                 <div className="flex gap-1">
-                     {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
-                         // Simple pagination logic: show first, last, current, and neighbors
-                         if (totalPages > 7 && Math.abs(page - orderPage) > 1 && page !== 1 && page !== totalPages) {
-                             if (Math.abs(page - orderPage) === 2) return <span key={page} className="px-1 self-center text-slate-400 text-xs">...</span>;
-                             return null;
-                         }
-                         return (
-                             <button
-                                key={page}
-                                onClick={() => setOrderPage(page)}
-                                className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${
-                                    orderPage === page 
-                                    ? 'bg-blue-600 text-white' 
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                             >
-                                 {page}
-                             </button>
-                         );
-                     })}
-                 </div>
-
-                 <button 
-                    onClick={() => setOrderPage(p => Math.min(totalPages, p + 1))}
-                    disabled={orderPage === totalPages}
-                    className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 transition-colors"
-                 >
-                     <Icons.ArrowRight size={16} />
-                 </button>
-             </div>
-        </div>
-      )}
     </div>
   );
 
   const renderSettingsTab = () => (
-    // ... existing Settings Tab content ...
     <div className="space-y-6 animate-fade-in w-full">
       <div className="flex items-center gap-2 mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <Icons.Settings className="text-slate-600 dark:text-slate-400" size={24} />
         <div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white">系統設定 (物流/金流/通知)</h3>
-            {settings.lastUpdated && (
-                <span className="text-xs text-slate-400 font-normal">上次更新：{settings.lastUpdated}</span>
-            )}
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white">系統設定</h3>
+            <span className="text-xs text-slate-400">更新：{settings.lastUpdated}</span>
         </div>
       </div>
-
-      {/* Telegram Notification Settings */}
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 relative overflow-hidden">
-         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
-             <div className="w-32 h-32 bg-blue-400 rounded-full blur-3xl"></div>
-         </div>
-         <div className="flex items-center justify-between mb-4 relative z-10">
-             <div className="flex items-center gap-2">
-                 <div className="bg-blue-500 text-white p-1.5 rounded-lg">
-                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2L2 10.5L10.5 12.5L20 22L12.5 13.5L21.5 2Z"></path></svg>
-                 </div>
-                 <h4 className="font-bold text-slate-900 dark:text-white">Telegram 訂單通知 (替代 Line Notify)</h4>
-             </div>
-         </div>
-
-         <div className="space-y-4 relative z-10">
-             <div className="p-4 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-                 <p className="font-bold mb-1">💡 如何設定？</p>
-                 <ol className="list-decimal pl-4 space-y-1 opacity-90 text-xs">
-                     <li>在 Telegram 搜尋 <b>@BotFather</b>，輸入 <code>/newbot</code> 建立機器人，取得 <b>Token</b>。</li>
-                     <li>在 Telegram 搜尋 <b>@userinfobot</b> (或其他 ID Bot)，取得您的 <b>Chat ID</b>。</li>
-                     <li><b>重要：</b>請先用您的 Telegram 帳號傳送隨意訊息給剛建立的機器人，以開通權限。</li>
-                 </ol>
-             </div>
-
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div className="space-y-1">
-                     <label className="text-xs font-bold text-slate-500">Bot Token</label>
-                     <input 
-                        type="text"
-                        value={settings.telegramBotToken || ''}
-                        onChange={(e) => updateSettingsLocal({ telegramBotToken: e.target.value })}
-                        className={`${inputClass} font-mono`}
-                        placeholder="例如：123456789:ABCdefGHIjklMNOpqrs..."
-                     />
-                 </div>
-                 <div className="space-y-1">
-                     <label className="text-xs font-bold text-slate-500">Chat ID</label>
-                     <input 
-                        type="text"
-                        value={settings.telegramChatId || ''}
-                        onChange={(e) => updateSettingsLocal({ telegramChatId: e.target.value })}
-                        className={`${inputClass} font-mono`}
-                        placeholder="例如：987654321"
-                     />
-                 </div>
-             </div>
-
-             <div className="flex justify-end">
-                 <button 
-                    onClick={handleTestTelegram}
-                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors flex items-center gap-2"
-                 >
-                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"></path><path d="M22 2L15 22L11 13L2 9L22 2Z"></path></svg>
-                    發送測試訊息
-                 </button>
-             </div>
-         </div>
-      </div>
-      
-      {/* Logistics Settings */}
       <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-         <div className="flex items-center justify-between mb-4">
-             <div className="flex items-center gap-2">
-                 <Icons.Truck className="text-blue-600" />
-                 <h4 className="font-bold text-slate-900 dark:text-white">取貨方式設定</h4>
-             </div>
-             <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                    type="checkbox" 
-                    checked={settings.enableStoreIntegration}
-                    onChange={(e) => updateSettingsLocal({ enableStoreIntegration: e.target.checked })}
-                    className="sr-only peer" 
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
-                <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">
-                    {settings.enableStoreIntegration ? '啟用自動地圖整合' : '使用手動查詢'}
-                </span>
-             </label>
+         <h4 className="font-bold text-slate-900 dark:text-white mb-4">Telegram 通知</h4>
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             <input type="text" value={settings.telegramBotToken || ''} onChange={(e) => updateSettingsLocal({ telegramBotToken: e.target.value })} className={inputClass} placeholder="Bot Token" />
+             <input type="text" value={settings.telegramChatId || ''} onChange={(e) => updateSettingsLocal({ telegramChatId: e.target.value })} className={inputClass} placeholder="Chat ID" />
          </div>
-         
-         {!settings.enableStoreIntegration && (
-             <div className="space-y-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-100 dark:border-slate-700">
-                 <div className="space-y-1">
-                     <label className="text-xs font-bold text-slate-500">手動查詢提示文字</label>
-                     <textarea 
-                        value={settings.storeFallbackMessage}
-                        onChange={(e) => updateSettingsLocal({ storeFallbackMessage: e.target.value })}
-                        className={inputClass}
-                        rows={2}
-                     />
-                 </div>
-                 <div className="space-y-1">
-                     <label className="text-xs font-bold text-slate-500">門市查詢連結</label>
-                     <input 
-                        type="text"
-                        value={settings.storeLookupLink}
-                        onChange={(e) => updateSettingsLocal({ storeLookupLink: e.target.value })}
-                        className={inputClass}
-                     />
-                 </div>
-             </div>
-         )}
+         <button onClick={handleTestTelegram} className="mt-4 px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-sm font-bold">發送測試</button>
       </div>
-
-      {/* Payment Settings */}
       <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-         <div className="flex items-center justify-between mb-4">
-             <div className="flex items-center gap-2">
-                 <Icons.Card className="text-green-600" />
-                 <h4 className="font-bold text-slate-900 dark:text-white">線上支付設定</h4>
-             </div>
-             <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                    type="checkbox" 
-                    checked={settings.enableOnlinePayment}
-                    onChange={(e) => updateSettingsLocal({ enableOnlinePayment: e.target.checked })}
-                    className="sr-only peer" 
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:peer-focus:ring-green-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-green-600"></div>
-                <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">
-                    {settings.enableOnlinePayment ? '啟用線上支付' : '使用銀行轉帳'}
-                </span>
-             </label>
+         <h4 className="font-bold text-slate-900 dark:text-white mb-4">金流設定</h4>
+         <div className="space-y-4">
+             <input type="text" value={settings.bankName} onChange={(e) => updateSettingsLocal({ bankName: e.target.value })} className={inputClass} placeholder="銀行名稱" />
+             <input type="text" value={settings.bankAccount} onChange={(e) => updateSettingsLocal({ bankAccount: e.target.value })} className={inputClass} placeholder="匯款帳號" />
+             <input type="text" value={settings.bankAccountName} onChange={(e) => updateSettingsLocal({ bankAccountName: e.target.value })} className={inputClass} placeholder="戶名" />
          </div>
-         
-         {!settings.enableOnlinePayment && (
-             <div className="space-y-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-100 dark:border-slate-700">
-                 <div className="space-y-1">
-                     <label className="text-xs font-bold text-slate-500">銀行代碼 / 名稱</label>
-                     <input 
-                        type="text"
-                        value={settings.bankName}
-                        onChange={(e) => updateSettingsLocal({ bankName: e.target.value })}
-                        className={inputClass}
-                        placeholder="例如：822 中國信託"
-                     />
-                 </div>
-                 <div className="space-y-1">
-                     <label className="text-xs font-bold text-slate-500">匯款帳號</label>
-                     <input 
-                        type="text"
-                        value={settings.bankAccount}
-                        onChange={(e) => updateSettingsLocal({ bankAccount: e.target.value })}
-                        className={`${inputClass} font-mono`}
-                        placeholder="例如：1234567890"
-                     />
-                 </div>
-                 <div className="space-y-1">
-                     <label className="text-xs font-bold text-slate-500">戶名</label>
-                     <input 
-                        type="text"
-                        value={settings.bankAccountName}
-                        onChange={(e) => updateSettingsLocal({ bankAccountName: e.target.value })}
-                        className={inputClass}
-                     />
-                 </div>
-             </div>
-         )}
       </div>
     </div>
   );
 
-  // --- Main Render ---
   return (
     <div className="pb-24 md:pb-8 pt-8 px-4 max-w-7xl mx-auto min-h-screen">
       <header className="mb-8 flex items-center justify-between">
-        <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Icons.Settings className="text-slate-400" />
-                後台管理系統
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">管理商品、品牌形象與訂單</p>
-        </div>
-        <button 
-            onClick={onLogout}
-            className="px-4 py-2 bg-red-50 text-red-600 rounded-lg font-bold text-sm hover:bg-red-100 transition-colors"
-        >
-            登出
-        </button>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><Icons.Settings />後台管理系統</h1>
+        <button onClick={onLogout} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg font-bold text-sm">登出</button>
       </header>
-
       <div className="flex flex-col md:flex-row gap-6">
-          {/* Sidebar Tabs */}
-          <div className="w-full md:w-64 flex flex-row md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
-             <button 
-                onClick={() => setActiveTab('products')}
-                className={`p-3 rounded-lg flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'products' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-             >
-                 <Icons.Product size={20} /> 商品管理
-             </button>
-             <button 
-                onClick={() => setActiveTab('brand')}
-                className={`p-3 rounded-lg flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'brand' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-             >
-                 <Icons.Brand size={20} /> 品牌介紹
-             </button>
-             <button 
-                onClick={() => setActiveTab('appearance')}
-                className={`p-3 rounded-lg flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'appearance' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-             >
-                 <Icons.Image size={20} /> 網站外觀
-             </button>
-             <button 
-                onClick={() => setActiveTab('orders')}
-                className={`p-3 rounded-lg flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'orders' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-             >
-                 <Icons.Order size={20} /> 訂單管理
-             </button>
-             <button 
-                onClick={() => setActiveTab('settings')}
-                className={`p-3 rounded-lg flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-             >
-                 <Icons.Settings size={20} /> 系統設定
-             </button>
+          <div className="w-full md:w-64 flex flex-row md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0">
+             <button onClick={() => setActiveTab('products')} className={`p-3 rounded-lg flex items-center gap-3 ${activeTab === 'products' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white dark:bg-slate-800'}`}><Icons.Product size={20} /> 商品管理</button>
+             <button onClick={() => setActiveTab('brand')} className={`p-3 rounded-lg flex items-center gap-3 ${activeTab === 'brand' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white dark:bg-slate-800'}`}><Icons.Brand size={20} /> 品牌介紹</button>
+             <button onClick={() => setActiveTab('appearance')} className={`p-3 rounded-lg flex items-center gap-3 ${activeTab === 'appearance' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white dark:bg-slate-800'}`}><Icons.Image size={20} /> 網站外觀</button>
+             <button onClick={() => setActiveTab('orders')} className={`p-3 rounded-lg flex items-center gap-3 ${activeTab === 'orders' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white dark:bg-slate-800'}`}><Icons.Order size={20} /> 訂單管理</button>
+             <button onClick={() => setActiveTab('settings')} className={`p-3 rounded-lg flex items-center gap-3 ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white dark:bg-slate-800'}`}><Icons.Settings size={20} /> 系統設定</button>
           </div>
-
-          {/* Content Area */}
-          <div className="flex-1 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 min-h-[500px]">
+          <div className="flex-1 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
               {activeTab === 'products' && renderProductsTab()}
               {activeTab === 'brand' && renderBrandTab()}
               {activeTab === 'appearance' && renderAppearanceTab()}
@@ -938,7 +557,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
       </div>
 
-      {/* Edit Product Modal (Keep existing structure but ensure no conflicts) */}
       {isEditModalOpen && editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
             <div className="bg-white dark:bg-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -948,49 +566,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
                 <div className="p-6 overflow-y-auto space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500">商品名稱</label>
-                            <input type="text" value={editingProduct.title} onChange={e => setEditingProduct({...editingProduct, title: e.target.value})} className={inputClass} />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500">價格</label>
-                            <input type="number" value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})} className={inputClass} />
-                        </div>
+                        <input type="text" value={editingProduct.title} onChange={e => setEditingProduct({...editingProduct, title: e.target.value})} className={inputClass} placeholder="商品名稱" />
+                        <input type="number" value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})} className={inputClass} placeholder="價格" />
                     </div>
-
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                             <label className="text-xs font-bold text-slate-500">商品分類</label>
-                             <select value={editingProduct.category || 'store'} onChange={e => setEditingProduct({...editingProduct, category: e.target.value as any})} className={inputClass}>
-                                 <option value="store">超取含運組</option>
-                                 <option value="delivery">宅配大禮包</option>
-                             </select>
-                        </div>
-                        <div className="space-y-1">
-                             <label className="text-xs font-bold text-slate-500">行銷標籤</label>
-                             <div className="flex gap-2">
-                                <select 
-                                    value={['熱銷推薦', '節慶限定', ''].includes(editingProduct.badge || '') ? editingProduct.badge : 'custom'} 
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        if (val !== 'custom') setEditingProduct({...editingProduct, badge: val});
-                                        else setEditingProduct({...editingProduct, badge: '新品上市'});
-                                    }}
-                                    className={inputClass}
-                                >
-                                    <option value="">無標籤</option>
-                                    <option value="熱銷推薦">熱銷推薦</option>
-                                    <option value="節慶限定">節慶限定</option>
-                                    <option value="custom">自訂...</option>
-                                </select>
-                                { !['熱銷推薦', '節慶限定', ''].includes(editingProduct.badge || '') && (
-                                    <input type="text" value={editingProduct.badge || ''} onChange={(e) => setEditingProduct({...editingProduct, badge: e.target.value})} className={inputClass} placeholder="輸入標籤" />
-                                )}
-                             </div>
-                        </div>
+                         <select value={editingProduct.category || 'store'} onChange={e => setEditingProduct({...editingProduct, category: e.target.value as any})} className={inputClass}>
+                             <option value="store">超取含運組</option>
+                             <option value="delivery">宅配大禮包</option>
+                         </select>
+                         <input type="text" value={editingProduct.badge || ''} onChange={(e) => setEditingProduct({...editingProduct, badge: e.target.value})} className={inputClass} placeholder="行銷標籤 (如：熱銷推薦)" />
                     </div>
                     
-                    {/* Image Management Section */}
                     <div className="space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
                          <div className="flex justify-between items-center">
                             <label className="text-xs font-bold text-slate-500">商品圖片 (最多6張)</label>
@@ -998,57 +584,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                          </div>
                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                              {editingProduct.images.map((img, idx) => (
-                                 <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-                                     <img src={img} alt={`img-${idx}`} className="w-full h-full object-cover" />
+                                 <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border">
+                                     <img src={img} alt="" className="w-full h-full object-cover" />
                                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
-                                         <div className="flex gap-1">
-                                             {idx > 0 && <button onClick={() => handleMoveImage(idx, 'left')} className="p-1 bg-white/20 hover:bg-white/40 rounded text-white"><Icons.ArrowRight className="rotate-180" size={12}/></button>}
-                                             {idx < editingProduct.images.length - 1 && <button onClick={() => handleMoveImage(idx, 'right')} className="p-1 bg-white/20 hover:bg-white/40 rounded text-white"><Icons.ArrowRight size={12}/></button>}
-                                         </div>
-                                         <button onClick={() => handleDeleteImage(idx)} className="p-1 bg-red-500/80 hover:bg-red-500 rounded text-white"><Icons.Trash size={12}/></button>
+                                         <button onClick={() => handleDeleteImage(idx)} className="p-1 bg-red-500 rounded text-white"><Icons.Trash size={12}/></button>
                                      </div>
-                                     {idx === 0 && <span className="absolute bottom-0 left-0 right-0 bg-blue-600/80 text-white text-[10px] text-center font-bold py-0.5">首圖</span>}
                                  </div>
                              ))}
                              {editingProduct.images.length < 6 && (
-                                 <label className="aspect-square rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:text-blue-500 text-slate-400 transition-colors">
+                                 <label className="aspect-square rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer text-slate-400">
                                      <Icons.Plus size={20} />
-                                     <span className="text-[10px] font-bold mt-1">上傳</span>
                                      <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
                                  </label>
                              )}
                          </div>
+                         {/* 容量顯示 */}
+                         <div className="mt-2 flex justify-between items-center text-[10px]">
+                            <span className="text-slate-400">提示：照片將自動優化壓縮，以利快速儲存</span>
+                            <span className={`${Math.round(editingProduct.images.reduce((a,c)=>a+c.length,0)/1024) > 800 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
+                               估算大小: {Math.round(editingProduct.images.reduce((a,c)=>a+c.length,0)/1024)} KB / 1024 KB
+                            </span>
+                         </div>
                     </div>
 
-                    <div className="space-y-1">
-                        <label className="text-xs font-bold text-slate-500">圖片 URL (若需使用外部連結)</label>
-                        <input type="text" placeholder="貼上外部圖片連結後，圖片會自動加入上方列表" onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    const val = (e.target as HTMLInputElement).value;
-                                    if (val && editingProduct.images.length < 6) {
-                                        setEditingProduct({...editingProduct, images: [...editingProduct.images, val]});
-                                        (e.target as HTMLInputElement).value = '';
-                                    } else if (editingProduct.images.length >= 6) { alert("圖片數量已達上限"); }
-                                }
-                            }} className={inputClass} />
-                    </div>
-
-                    <div className="space-y-1">
-                         <label className="text-xs font-bold text-slate-500">短描述 (特色列表，用逗號分隔)</label>
-                         <textarea value={editingProduct.description.join(',')} onChange={e => setEditingProduct({...editingProduct, description: e.target.value.split(',')})} className={inputClass} rows={3} />
-                    </div>
-                    <div className="space-y-1">
-                         <label className="text-xs font-bold text-slate-500">詳細介紹</label>
-                         <textarea value={editingProduct.longDescription || ''} onChange={e => setEditingProduct({...editingProduct, longDescription: e.target.value})} className={inputClass} rows={5} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <input type="checkbox" id="isActive" checked={editingProduct.isActive !== false} onChange={e => setEditingProduct({...editingProduct, isActive: e.target.checked})} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                        <label htmlFor="isActive" className="text-sm font-bold text-slate-700 dark:text-slate-300">商品上架中</label>
-                    </div>
+                    <textarea value={editingProduct.description.join(',')} onChange={e => setEditingProduct({...editingProduct, description: e.target.value.split(',')})} className={inputClass} rows={2} placeholder="短描述 (逗號隔開)" />
+                    <textarea value={editingProduct.longDescription || ''} onChange={e => setEditingProduct({...editingProduct, longDescription: e.target.value})} className={inputClass} rows={4} placeholder="詳細介紹" />
                 </div>
-                <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3">
-                    <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-200 rounded-lg">取消</button>
-                    <button onClick={handleSaveProduct} disabled={isSaving} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50">{isSaving ? '儲存中...' : '儲存變更'}</button>
+                <div className="p-4 border-t flex justify-end gap-3">
+                    <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-slate-500 font-bold">取消</button>
+                    <button onClick={handleSaveProduct} disabled={isSaving} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg disabled:opacity-50">{isSaving ? '儲存中...' : '儲存變更'}</button>
                 </div>
             </div>
         </div>
