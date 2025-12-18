@@ -1,7 +1,7 @@
 
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import * as firebaseApp from "firebase/app";
+import * as firebaseFirestore from "firebase/firestore";
+import * as firebaseStorage from "firebase/storage";
 import * as firebaseAuth from "firebase/auth";
 
 // -----------------------------------------------------------
@@ -27,11 +27,16 @@ let storage: any;
 let auth: any;
 
 try {
+    // Fix: Using wildcard imports and extracting members via type casting to bypass environment-specific module resolution issues
+    const { initializeApp } = firebaseApp as any;
+    const { getFirestore } = firebaseFirestore as any;
+    const { getStorage } = firebaseStorage as any;
+    const { getAuth } = firebaseAuth as any;
+
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     storage = getStorage(app);
-    // 使用轉型 (any) 來避免型別檢查錯誤
-    auth = (firebaseAuth as any).getAuth(app);
+    auth = getAuth(app);
     console.log("🔥 Firebase 連線成功 (seafood-liu)！");
 } catch (error) {
     console.error("Firebase 初始化失敗:", error);
