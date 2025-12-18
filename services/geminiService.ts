@@ -1,17 +1,16 @@
-import { GoogleGenAI } from "@google/genai";
 
-// Initialize the Gemini client
-// Note: In a real production app, API keys should be handled via backend proxies.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+import { GoogleGenAI } from "@google/genai";
 
 /**
  * Edits a product image based on a user prompt using Gemini 2.5 Flash Image.
  * This corresponds to the "Nano banana powered app" requirement.
  */
 export const editProductImage = async (base64Image: string, prompt: string): Promise<string> => {
+  // Fix: Create a new GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
   try {
-    // Ensure base64 string is clean (remove data:image/...;base64, prefix if present for the API, 
-    // although @google/genai usually handles raw base64 in inlineData nicely if mimeType is correct)
+    // Ensure base64 string is clean (remove data:image/...;base64, prefix if present for the API)
     const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
 
     const response = await ai.models.generateContent({
