@@ -72,7 +72,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     const estimatedDocSizeKB = Math.round(imagesTotalSize / 1024);
     
     if (estimatedDocSizeKB > 990) {
-        alert(`儲存失敗：由於您選擇了「保留原始品質」，目前照片總容量 (${estimatedDocSizeKB}KB) 已非常接近 1MB 限制。請嘗試減少 1 張照片，或將照片尺寸調整至更小。`);
+        alert(`儲存失敗：目前照片總容量 (${estimatedDocSizeKB}KB) 已接近 1MB 限制。雖然已使用 0.92 品質優化，但照片數量或細節過多。請嘗試減少 1 張照片。`);
         return;
     }
 
@@ -107,14 +107,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // --- 高品質圖片處理：限制 880px * 880px 並保留 1.0 品質 ---
+  // --- 高品質圖片處理：限制 880px * 880px 並使用視覺無損 0.92 品質 ---
   const compressImage = (base64Str: string): Promise<string> => {
       return new Promise((resolve) => {
           const img = new Image();
           img.src = base64Str;
           img.onload = () => {
               const canvas = document.createElement('canvas');
-              // 依照您的要求，僅限制前台最終呈現尺寸 (880px)
+              // 僅限制前台最終呈現尺寸 (880px)
               const MAX_WIDTH = 880;
               const MAX_HEIGHT = 880;
               let width = img.width;
@@ -140,8 +140,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(img, 0, 0, width, height);
               }
-              // 品質設定為 1.0 (無壓縮品質損耗)
-              resolve(canvas.toDataURL('image/jpeg', 1.0));
+              // 品質設定為 0.92 (網頁開發最推薦的視覺無損點，體積遠小於 1.0)
+              resolve(canvas.toDataURL('image/jpeg', 0.92));
           };
       });
   };
@@ -444,10 +444,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         <input type="number" value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})} className={inputClass} placeholder="價格" />
                     </div>
                     
-                    {/* 照片管理區塊 - 保留排序按鈕，尺寸限制為 880px 高品質 */}
+                    {/* 照片管理區塊 - 限制 880px 並使用優化後的 0.92 品質 */}
                     <div className="space-y-2 border rounded-lg p-3">
                          <div className="flex justify-between items-center mb-2">
-                            <label className="text-xs font-bold text-slate-500">商品照片 (尺寸上限 880px / 品質 100%)</label>
+                            <label className="text-xs font-bold text-slate-500">商品照片 (尺寸上限 880px / 品質 92%)</label>
                             <span className="text-xs text-slate-400">{editingProduct.images.length}/6</span>
                          </div>
                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -482,7 +482,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                              )}
                          </div>
                          <div className="mt-2 flex justify-between items-center text-[10px]">
-                            <span className="text-slate-400">注意：高品質照片較佔空間，單一產品總量不可超過 1MB</span>
+                            <span className="text-slate-400">建議：0.92 品質可兼顧清晰度與儲存容量</span>
                             <span className={`${Math.round(editingProduct.images.reduce((a,c)=>a+c.length,0)/1024) > 900 ? 'text-red-500 font-bold animate-pulse' : 'text-slate-400'}`}>
                                目前容量: {Math.round(editingProduct.images.reduce((a,c)=>a+c.length,0)/1024)} KB / 1024 KB
                             </span>
