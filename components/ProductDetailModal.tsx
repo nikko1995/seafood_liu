@@ -64,8 +64,8 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center md:bg-slate-900/60 md:backdrop-blur-sm md:p-4 animate-fade-in">
-      {/* Container */}
-      <div className="bg-white dark:bg-slate-900 w-full h-full md:h-auto md:max-h-[85vh] md:max-w-4xl md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative">
+      {/* Container - Fixed height on desktop for better layout balance */}
+      <div className="bg-white dark:bg-slate-900 w-full h-full md:h-[600px] md:max-w-4xl md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative transition-all duration-300">
         
         {/* Close Button */}
         <button 
@@ -75,9 +75,9 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
           <Icons.Close size={20} />
         </button>
 
-        {/* Image Section - Fixed 1:1 Aspect Ratio Container */}
-        <div className="w-full md:w-1/2 bg-slate-100 dark:bg-slate-950 relative flex flex-col group flex-shrink-0">
-          <div className="relative aspect-square w-full overflow-hidden">
+        {/* Image Section - Adaptive height on desktop to eliminate gaps */}
+        <div className="w-full md:w-1/2 bg-slate-100 dark:bg-slate-950 relative flex flex-col group flex-shrink-0 md:h-full">
+          <div className="relative aspect-square md:aspect-auto w-full md:h-full overflow-hidden">
             <img 
               src={product.images[currentImageIndex]} 
               alt={product.title} 
@@ -108,7 +108,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
               </>
             )}
             
-            {/* Thumbnails Overlay */}
+            {/* Thumbnails Overlay - Fixed to bottom of the image area */}
             <div className="absolute bottom-3 left-0 right-0 px-3 flex gap-2 overflow-x-auto justify-center scrollbar-hide">
               {product.images.map((img, idx) => (
                 <button 
@@ -126,8 +126,8 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
         </div>
 
         {/* Info Section */}
-        <div className="w-full flex-1 md:w-1/2 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
-           <div className="p-6 md:p-8 flex-1 overflow-y-auto">
+        <div className="w-full flex-1 md:w-1/2 flex flex-col bg-white dark:bg-slate-900 overflow-hidden md:h-full">
+           <div className="p-6 md:p-8 flex-1 overflow-y-auto custom-scrollbar">
              <div className="mb-1 text-blue-600 dark:text-blue-400 text-xs font-bold tracking-widest uppercase">Premium Seafood</div>
              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2 leading-tight">{product.title}</h2>
              <div className="flex items-baseline gap-2 mb-6">
@@ -155,7 +155,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                       商品介紹 Description
                     </h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                    <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-medium whitespace-pre-wrap">
                       {product.longDescription}
                     </p>
                  </div>
@@ -163,7 +163,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
              </div>
            </div>
 
-           {/* Footer Action */}
+           {/* Footer Action - Fixed to the bottom of the info area */}
            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 pb-safe">
              <button 
                 onClick={() => onBuy(product)}
