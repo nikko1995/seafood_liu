@@ -113,7 +113,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           img.src = base64Str;
           img.onload = () => {
               const MAX_LIMIT = 880;
-              // 如果原始尺寸已經符合限制，直接回傳原始 Base64 (保留原格式如 WebP)
+              // 如果原始尺寸已經符合限制，直接回傳原始 Base64
               if (img.width <= MAX_LIMIT && img.height <= MAX_LIMIT) {
                   resolve(base64Str);
                   return;
@@ -143,8 +143,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(img, 0, 0, width, height);
               }
-              // 使用更高的 0.95 品質進行壓縮
-              resolve(canvas.toDataURL('image/jpeg', 0.95));
+              // 將品質從 0.95 降至 0.85 以節省空間，視覺上差異極小
+              resolve(canvas.toDataURL('image/jpeg', 0.85));
           };
       });
   };
@@ -521,7 +521,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                     <div className="space-y-1">
                         <label className="text-xs font-bold text-slate-500 dark:text-slate-400">詳細商品介紹</label>
-                        <textarea value={editingProduct.longDescription || ''} onChange={e => setEditingProduct({...editingProduct, longDescription: e.target.value})} className={inputClass} rows={4} placeholder="描述口感、來源或料理方式" />
+                        <textarea value={editingProduct.longDescription || ''} onChange={e => setEditingProduct({...editingProduct, longDescription: e.target.value})} className={inputClass} rows={4} placeholder="描述口感、來源 or 料理方式" />
                     </div>
                 </div>
                 <div className="p-4 border-t dark:border-slate-700 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800">
