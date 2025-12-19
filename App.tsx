@@ -127,10 +127,10 @@ const App: React.FC = () => {
   const renderBadge = (text: string) => {
       const isHot = text.includes('熱銷');
       const Icon = isHot ? Icons.Flame : Icons.Gift;
-      const colorClass = isHot ? 'from-red-500 to-orange-500' : 'from-yellow-500 to-amber-600';
+      const colorClass = isHot ? 'from-red-600 to-orange-500' : 'from-yellow-500 to-amber-600';
       return (
-        <div className={`absolute top-3 left-3 bg-gradient-to-r ${colorClass} text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1 z-20`}>
-            <Icon size={12} fill={isHot ? 'currentColor' : 'none'} />
+        <div className={`absolute top-4 left-4 bg-gradient-to-r ${colorClass} text-white text-[12px] font-black px-3 py-1.5 rounded-full shadow-xl flex items-center gap-1.5 z-20 transform hover:scale-105 transition-transform`}>
+            <Icon size={14} fill={isHot ? 'currentColor' : 'none'} />
             {text}
         </div>
       );
