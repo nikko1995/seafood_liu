@@ -55,18 +55,19 @@ const App: React.FC = () => {
         setIsLoading(true);
         try {
             const [fP, fO, fS] = await Promise.all([fetchProducts(), fetchOrders(), fetchSettings()]);
-            if (fP.length > 0) setProducts(fP);
-            let mergedOrders = fO;
+            if (fP && fP.length > 0) setProducts(fP);
+            let mergedOrders = fO || [];
             if (lastCreatedOrder.current) {
-                const found = fO.find(o => o.id === lastCreatedOrder.current?.id);
-                if (!found) mergedOrders = [lastCreatedOrder.current, ...fO];
+                const found = mergedOrders.find(o => o.id === lastCreatedOrder.current?.id);
+                if (!found) mergedOrders = [lastCreatedOrder.current, ...mergedOrders];
             }
-            if (mergedOrders.length > 0) setOrders(mergedOrders);
+            setOrders(mergedOrders);
             if (fS) setSettings(prev => ({ ...prev, ...fS }));
         } catch (error) {
             console.error("Data load failed", error);
         } finally {
-            setIsLoading(false);
+            // 延遲一點點關閉 loading 以確保轉場平滑
+            setTimeout(() => setIsLoading(false), 300);
         }
     };
 
@@ -136,8 +137,27 @@ const App: React.FC = () => {
       );
   };
 
+  // 骨架屏組件
+  const ProductSkeleton = () => (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-pulse">
+        <div className="aspect-[16/9] bg-slate-200 dark:bg-slate-800" />
+        <div className="p-5 space-y-3">
+            <div className="flex justify-between items-center">
+                <div className="h-5 w-1/2 bg-slate-200 dark:bg-slate-800 rounded-md" />
+                <div className="h-5 w-1/4 bg-slate-200 dark:bg-slate-800 rounded-md" />
+            </div>
+            <div className="space-y-2">
+                <div className="h-3 w-full bg-slate-100 dark:bg-slate-800/50 rounded-md" />
+                <div className="h-3 w-5/6 bg-slate-100 dark:bg-slate-800/50 rounded-md" />
+            </div>
+            <div className="h-10 w-full bg-slate-200 dark:bg-slate-800 rounded-xl mt-4" />
+        </div>
+    </div>
+  );
+
   const renderProducts = () => {
     const filtered = products.filter(p => p.isActive !== false && (selectedCategory === 'all' || p.category === selectedCategory));
+    
     return (
     <div className="pb-24 md:pb-8 px-4 max-w-6xl mx-auto animate-fade-in">
       <div className="py-6">
@@ -164,34 +184,40 @@ const App: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filtered.length === 0 ? (
+          {isLoading ? (
+              // 載入中顯示骨架屏
+              Array.from({ length: 6 }).map((_, i) => <ProductSkeleton key={i} />)
+          ) : filtered.length === 0 ? (
+              // 載入完成但沒資料才顯示空狀態
               <div className="col-span-full text-center py-20 text-slate-400">目前此分類尚無商品</div>
-          ) : filtered.map((p) => (
-            <div key={p.id} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden group flex flex-col h-full hover:shadow-xl transition-all duration-300 cursor-pointer" onClick={() => handleOpenDetail(p)}>
-                {/* Fixed Aspect Ratio for Card Images */}
-                <div className="relative aspect-[16/9] overflow-hidden bg-slate-100 dark:bg-slate-800">
-                  <img src={p.images[0]} alt={p.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                  {p.badge && renderBadge(p.badge)}
+          ) : (
+              // 正常顯示商品
+              filtered.map((p) => (
+                <div key={p.id} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden group flex flex-col h-full hover:shadow-xl transition-all duration-300 cursor-pointer" onClick={() => handleOpenDetail(p)}>
+                    <div className="relative aspect-[16/9] overflow-hidden bg-slate-100 dark:bg-slate-800">
+                      <img src={p.images[0]} alt={p.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                      {p.badge && renderBadge(p.badge)}
+                    </div>
+                    <div className="p-5 flex flex-col flex-1">
+                      <div className="flex justify-between items-start mb-2">
+                          <h3 className="text-base font-bold text-slate-800 dark:text-white group-hover:text-blue-600 transition-colors">{p.title}</h3>
+                          <span className="text-base font-bold text-blue-600 dark:text-blue-400">${p.price}</span>
+                      </div>
+                      <ul className="space-y-1.5 mb-5 flex-1">
+                          {p.description.slice(0, 3).map((item, idx) => ( 
+                          <li key={idx} className="flex items-center text-xs text-slate-500 dark:text-slate-400">
+                              <div className="w-1 h-1 bg-blue-500 rounded-full mr-2 flex-shrink-0" />
+                              {item}
+                          </li>
+                          ))}
+                      </ul>
+                      <button onClick={(e) => { e.stopPropagation(); handleBuyNow(p); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-200 dark:shadow-blue-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-xs">
+                        <Icons.Lightning size={16} fill="currentColor" /> 立即購買
+                      </button>
+                    </div>
                 </div>
-                <div className="p-5 flex flex-col flex-1">
-                  <div className="flex justify-between items-start mb-2">
-                      <h3 className="text-base font-bold text-slate-800 dark:text-white group-hover:text-blue-600 transition-colors">{p.title}</h3>
-                      <span className="text-base font-bold text-blue-600 dark:text-blue-400">${p.price}</span>
-                  </div>
-                  <ul className="space-y-1.5 mb-5 flex-1">
-                      {p.description.slice(0, 3).map((item, idx) => ( 
-                      <li key={idx} className="flex items-center text-xs text-slate-500 dark:text-slate-400">
-                          <div className="w-1 h-1 bg-blue-500 rounded-full mr-2 flex-shrink-0" />
-                          {item}
-                      </li>
-                      ))}
-                  </ul>
-                  <button onClick={(e) => { e.stopPropagation(); handleBuyNow(p); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-200 dark:shadow-blue-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-xs">
-                    <Icons.Lightning size={16} fill="currentColor" /> 立即購買
-                  </button>
-                </div>
-            </div>
-          ))}
+              ))
+          )}
       </div>
     </div>
   );
@@ -200,24 +226,42 @@ const App: React.FC = () => {
   const renderBrand = () => (
     <div className="pb-24 md:pb-8 pt-4 max-w-2xl mx-auto text-center animate-fade-in">
         <div className="w-full aspect-[2/1] rounded-2xl overflow-hidden mb-8 relative shadow-lg mx-4 md:mx-0">
-             <img src={settings.brandBannerImage} alt="Brand" className="w-full h-full object-cover" />
-             <div className="absolute inset-0 bg-black/40 flex items-center justify-center flex-col">
-                <h2 className="text-2xl md:text-3xl font-bold text-white mb-2 drop-shadow-md">{settings.brandBannerTitle}</h2>
-                <div className="w-12 h-1 bg-blue-500 rounded-full"></div>
-             </div>
+             {isLoading ? (
+                 <div className="w-full h-full bg-slate-200 dark:bg-slate-800 animate-pulse" />
+             ) : (
+                <>
+                    <img src={settings.brandBannerImage} alt="Brand" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center flex-col">
+                       <h2 className="text-2xl md:text-3xl font-bold text-white mb-2 drop-shadow-md">{settings.brandBannerTitle}</h2>
+                       <div className="w-12 h-1 bg-blue-500 rounded-full"></div>
+                    </div>
+                </>
+             )}
         </div>
         <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-100 dark:border-slate-800 text-left space-y-8 mx-4 md:mx-0 shadow-sm">
-            {[0, 1].map(i => (
-              <div key={i} className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-slate-50 dark:bg-slate-800 flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-700">
-                     {settings.brandFeatures?.[i]?.iconUrl ? <img src={settings.brandFeatures[i].iconUrl} className="w-full h-full object-cover" /> : <Icons.Fish size={24} className="text-blue-500" />}
+            {isLoading ? (
+                Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="flex gap-4 animate-pulse">
+                        <div className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-800 flex-shrink-0" />
+                        <div className="flex-1 space-y-3">
+                            <div className="h-5 w-1/3 bg-slate-200 dark:bg-slate-800 rounded" />
+                            <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded" />
+                        </div>
+                    </div>
+                ))
+            ) : (
+                [0, 1].map(i => (
+                  <div key={i} className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-slate-50 dark:bg-slate-800 flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-700">
+                         {settings.brandFeatures?.[i]?.iconUrl ? <img src={settings.brandFeatures[i].iconUrl} className="w-full h-full object-cover" /> : <Icons.Fish size={24} className="text-blue-500" />}
+                      </div>
+                      <div>
+                          <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">{settings.brandFeatures?.[i]?.title}</h3>
+                          <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-sm md:text-base">{settings.brandFeatures?.[i]?.description}</p>
+                      </div>
                   </div>
-                  <div>
-                      <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">{settings.brandFeatures?.[i]?.title}</h3>
-                      <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-sm md:text-base">{settings.brandFeatures?.[i]?.description}</p>
-                  </div>
-              </div>
-            ))}
+                ))
+            )}
         </div>
     </div>
   );
@@ -253,7 +297,13 @@ const App: React.FC = () => {
                   <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="輸入訂單編號或手機" className="flex-1 px-4 py-2 bg-transparent text-slate-900 dark:text-white focus:outline-none text-sm" />
                   <button onClick={handleSearchOrder} className="bg-blue-600 text-white p-3 rounded-xl shadow-lg"><Icons.Search size={18} /></button>
               </div>
-              <div className="space-y-4">{hasSearched ? renderOrderList(searchResult || []) : <div className="py-20 text-center text-slate-400 text-sm">輸入資料以查詢進度</div>}</div>
+              <div className="space-y-4">
+                {isLoading ? (
+                    Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className="h-32 w-full bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse" />
+                    ))
+                ) : hasSearched ? renderOrderList(searchResult || []) : <div className="py-20 text-center text-slate-400 text-sm">輸入資料以查詢進度</div>}
+              </div>
           </div>
         )}
         {activeTab === Tab.ADMIN && currentUser && <AdminPanel products={products} setProducts={setProducts} orders={orders} setOrders={setOrders} settings={settings} setSettings={setSettings} onLogout={async () => { await logoutAdmin(); setActiveTab(Tab.PRODUCTS); }} />}
@@ -263,7 +313,7 @@ const App: React.FC = () => {
       {isCheckoutOpen && selectedProduct && <CheckoutFlow product={selectedProduct} onClose={() => setIsCheckoutOpen(false)} onComplete={handleCheckoutComplete} settings={settings} />}
       {isBankInfoOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 text-left">
-              <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-2xl w-full max-w-sm relative">
+              <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-2xl w-full max-sm relative">
                   <button onClick={() => setIsBankInfoOpen(false)} className="absolute top-4 right-4 text-slate-400"><Icons.Close /></button>
                   <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-900 dark:text-white"><Icons.Card className="text-blue-600" /> 匯款資訊</h3>
                   <div className="space-y-4 bg-slate-50 dark:bg-slate-800 p-5 rounded-xl border dark:border-slate-700">
