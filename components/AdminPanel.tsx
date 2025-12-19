@@ -106,14 +106,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // --- 高品質智慧圖片處理：保留原始品質或高品質縮放 ---
   const processImage = (base64Str: string): Promise<string> => {
       return new Promise((resolve) => {
           const img = new Image();
           img.src = base64Str;
           img.onload = () => {
               const MAX_LIMIT = 880;
-              // 如果原始尺寸已經符合限制，直接回傳原始 Base64
               if (img.width <= MAX_LIMIT && img.height <= MAX_LIMIT) {
                   resolve(base64Str);
                   return;
@@ -143,7 +141,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(img, 0, 0, width, height);
               }
-              // 將品質從 0.95 降至 0.85 以節省空間，視覺上差異極小
               resolve(canvas.toDataURL('image/jpeg', 0.85));
           };
       });
@@ -322,6 +319,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div className="flex-1">
                           <h4 className="font-bold text-slate-900 dark:text-white">{p.title}</h4>
                           <p className="text-blue-600 dark:text-blue-400 font-bold text-sm mt-1">${p.price}</p>
+                          <div className="flex gap-2 mt-1">
+                            {p.badge && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold">{p.badge}</span>}
+                            <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded font-bold">{p.category === 'store' ? '超取含運' : '宅配大禮包'}</span>
+                          </div>
                         </div>
                         <div className="flex gap-2">
                           <button onClick={() => handleEditProduct(p)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"><Icons.Edit size={20} /></button>
@@ -470,10 +471,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             <input type="number" value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})} className={inputClass} placeholder="價格" />
                         </div>
                     </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400">行銷小標籤 (例如：熱銷推薦)</label>
+                            <input type="text" value={editingProduct.badge || ''} onChange={e => setEditingProduct({...editingProduct, badge: e.target.value})} className={inputClass} placeholder="留空則不顯示" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400">商品分類 / 配送方式</label>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={() => setEditingProduct({...editingProduct, category: 'store'})}
+                                    className={`flex-1 py-2.5 rounded-lg text-xs font-bold border transition-all ${editingProduct.category === 'store' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600'}`}
+                                >
+                                    超取含運組
+                                </button>
+                                <button 
+                                    onClick={() => setEditingProduct({...editingProduct, category: 'delivery'})}
+                                    className={`flex-1 py-2.5 rounded-lg text-xs font-bold border transition-all ${editingProduct.category === 'delivery' ? 'bg-orange-600 text-white border-orange-600 shadow-md' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600'}`}
+                                >
+                                    宅配大禮包
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     
                     <div className="space-y-2 border dark:border-slate-700 rounded-lg p-3 bg-slate-50 dark:bg-slate-900/50">
                          <div className="flex justify-between items-center mb-2">
-                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400">商品照片 (尺寸上限 880px / 高品質保存)</label>
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400">商品照片 (尺寸上限 880px / 0.85 品質)</label>
                             <span className="text-xs text-slate-400">{editingProduct.images.length}/6</span>
                          </div>
                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -508,7 +533,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                              )}
                          </div>
                          <div className="mt-2 flex justify-between items-center text-[10px]">
-                            <span className="text-slate-400">貼心提醒：若圖片小於 880px 系統將原封不動保留（包含 WebP 高清畫質）</span>
+                            <span className="text-slate-400">提示：系統會自動調整比例並縮減體積以利保存</span>
                             <span className={`${Math.round(editingProduct.images.reduce((a,c)=>a+c.length,0)/1024) > 900 ? 'text-red-500 font-bold animate-pulse' : 'text-slate-400'}`}>
                                目前容量: {Math.round(editingProduct.images.reduce((a,c)=>a+c.length,0)/1024)} KB / 1024 KB
                             </span>
