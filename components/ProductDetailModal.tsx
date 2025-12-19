@@ -31,22 +31,22 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
   const renderBadge = (text: string) => {
       if (text.includes('熱銷')) {
           return (
-            <span className="bg-gradient-to-r from-red-500 to-orange-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1.5 transform hover:scale-105 transition-transform">
-                <Icons.Flame size={12} fill="currentColor" />
+            <span className="bg-gradient-to-r from-red-600 to-orange-500 text-white text-sm font-black px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 transform hover:scale-105 transition-transform whitespace-nowrap">
+                <Icons.Flame size={16} fill="currentColor" />
                 {text}
             </span>
           );
       }
       if (text.includes('限定')) {
           return (
-            <span className="bg-gradient-to-r from-yellow-500 to-amber-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1.5 transform hover:scale-105 transition-transform">
-                <Icons.Gift size={12} />
+            <span className="bg-gradient-to-r from-yellow-500 to-amber-600 text-white text-sm font-black px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 transform hover:scale-105 transition-transform whitespace-nowrap">
+                <Icons.Gift size={16} />
                 {text}
             </span>
           );
       }
       return (
-        <span className="bg-blue-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-lg">
+        <span className="bg-blue-600 text-white text-sm font-black px-4 py-2 rounded-full shadow-2xl whitespace-nowrap">
             {text}
         </span>
       );
@@ -55,8 +55,8 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
   const renderCategoryBadge = () => {
       const isStore = product.category === 'store';
       return (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border shadow-sm bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700">
-              {isStore ? <Icons.Store size={12} /> : <Icons.Truck size={12} />}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-black border shadow-md bg-white/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 backdrop-blur-sm whitespace-nowrap">
+              {isStore ? <Icons.Store size={14} /> : <Icons.Truck size={14} />}
               <span>{isStore ? '超取含運' : '低溫宅配'}</span>
           </div>
       );
@@ -84,8 +84,8 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
               className="w-full h-full object-cover transition-opacity duration-300"
             />
 
-            {/* Badges Overlay */}
-            <div className="absolute top-3 left-3 z-10 flex flex-col gap-2 items-start">
+            {/* Badges Overlay - Updated to flex-row and items-center */}
+            <div className="absolute top-4 left-4 z-10 flex flex-row gap-2 items-center">
               {product.badge && renderBadge(product.badge)}
               {renderCategoryBadge()}
             </div>
