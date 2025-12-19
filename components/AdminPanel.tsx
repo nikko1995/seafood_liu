@@ -319,9 +319,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div className="flex-1">
                           <h4 className="font-bold text-slate-900 dark:text-white">{p.title}</h4>
                           <p className="text-blue-600 dark:text-blue-400 font-bold text-sm mt-1">${p.price}</p>
-                          <div className="flex gap-2 mt-1">
-                            {p.badge && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold">{p.badge}</span>}
-                            <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded font-bold">{p.category === 'store' ? '超取含運' : '宅配大禮包'}</span>
+                          <div className="flex gap-2 mt-1.5">
+                            {p.badge && <span className="text-[11px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-black shadow-sm">{p.badge}</span>}
+                            <span className="text-[11px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-full font-bold">{p.category === 'store' ? '超取含運' : '宅配大禮包'}</span>
                           </div>
                         </div>
                         <div className="flex gap-2">
